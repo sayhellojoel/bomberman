@@ -1,0 +1,12 @@
+{
+  "name": "bomberman",
+  "version": "1.0.0",
+  "description": "Super Bomberman inspired networked multiplayer game",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "ws": "^8.16.0"
+  }
+}

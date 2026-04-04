@@ -1,0 +1,268 @@
+/* style.css — Bomberman styling */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  background: #1a1a2e;
+  color: #eee;
+  font-family: 'Segoe UI', Arial, sans-serif;
+  overflow: hidden;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Lobby */
+#lobby {
+  text-align: center;
+  padding: 20px;
+}
+
+#lobby h1 {
+  font-size: 3rem;
+  color: #ff6b35;
+  text-shadow: 3px 3px 0 #000;
+  margin-bottom: 20px;
+  letter-spacing: 4px;
+}
+
+#lobby h2 {
+  font-size: 1.4rem;
+  margin-bottom: 12px;
+  color: #ffd700;
+}
+
+#join-section {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  margin-bottom: 20px;
+}
+
+#nameInput {
+  padding: 10px 16px;
+  font-size: 1.1rem;
+  border: 2px solid #ff6b35;
+  border-radius: 8px;
+  background: #16213e;
+  color: #eee;
+  outline: none;
+  width: 200px;
+}
+
+button {
+  padding: 10px 20px;
+  font-size: 1.1rem;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: bold;
+  transition: transform 0.1s;
+}
+
+button:active { transform: scale(0.95); }
+
+#joinBtn {
+  background: #ff6b35;
+  color: #fff;
+}
+
+#startBtn {
+  background: #28a745;
+  color: #fff;
+  font-size: 1.2rem;
+  padding: 12px 30px;
+  margin-top: 16px;
+}
+
+#startBtn:disabled {
+  background: #555;
+  cursor: not-allowed;
+}
+
+#playerList {
+  display: flex;
+  gap: 16px;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.player-tag {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #16213e;
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: 2px solid #333;
+}
+
+.player-color {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+}
+
+.lobby-options {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: center;
+  margin: 16px 0;
+}
+
+.lobby-options label {
+  font-size: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.lobby-options select, .lobby-options input[type="range"] {
+  padding: 4px;
+  font-size: 1rem;
+  background: #16213e;
+  color: #eee;
+  border: 1px solid #555;
+  border-radius: 4px;
+}
+
+/* Game */
+#game {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  height: 100vh;
+  width: 100vw;
+}
+
+#scoreboard {
+  display: flex;
+  gap: 16px;
+  justify-content: center;
+  flex-wrap: wrap;
+  padding: 8px 12px;
+  background: #0f0f23;
+  width: 100%;
+  min-height: 44px;
+  align-items: center;
+}
+
+.score-entry {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.9rem;
+  font-weight: bold;
+}
+
+.score-color {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+}
+
+.score-dead {
+  opacity: 0.35;
+  text-decoration: line-through;
+}
+
+#gameCanvas {
+  display: block;
+  background: #333;
+  image-rendering: pixelated;
+}
+
+/* Mobile Controls */
+#mobile-controls {
+  display: none;
+  justify-content: space-around;
+  align-items: center;
+  width: 100%;
+  padding: 10px 20px;
+  gap: 20px;
+}
+
+#dpad {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.dpad-mid-row {
+  display: flex;
+  gap: 2px;
+  align-items: center;
+}
+
+.dpad-btn {
+  width: 56px;
+  height: 56px;
+  background: #444;
+  border: 2px solid #666;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 1.4rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.dpad-btn:active {
+  background: #ff6b35;
+}
+
+.dpad-center {
+  width: 56px;
+  height: 56px;
+  background: #333;
+  border-radius: 8px;
+}
+
+#bombBtn {
+  width: 90px;
+  height: 90px;
+  border-radius: 50%;
+  background: #e63946;
+  color: #fff;
+  font-size: 1.1rem;
+  font-weight: bold;
+  border: 3px solid #fff;
+}
+
+/* Round End Overlay */
+#roundEnd {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0, 0, 0, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+#roundEndText {
+  font-size: 2.5rem;
+  font-weight: bold;
+  text-align: center;
+  text-shadow: 3px 3px 0 #000;
+  padding: 30px;
+}
+
+/* Show mobile controls on touch devices */
+@media (pointer: coarse) {
+  #mobile-controls { display: flex; }
+}
+
+@media (max-width: 600px) {
+  #mobile-controls { display: flex; }
+  #lobby h1 { font-size: 2rem; }
+}

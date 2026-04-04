@@ -1,0 +1,16 @@
+{
+  "name": "Bomberman",
+  "short_name": "Bomberman",
+  "description": "Super Bomberman inspired multiplayer game",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#1a1a2e",
+  "theme_color": "#1a1a2e",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='55' r='35' fill='%23fff' stroke='%23000' stroke-width='4'/><circle cx='40' cy='48' r='5' fill='%23000'/><circle cx='60' cy='48' r='5' fill='%23000'/><line x1='50' y1='20' x2='50' y2='8' stroke='%23000' stroke-width='3'/><circle cx='50' cy='6' r='5' fill='%23ff6600'/></svg>",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}

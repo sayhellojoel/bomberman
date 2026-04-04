@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#1a1a2e">
+  <title>Bomberman</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Lobby Screen -->
+  <div id="lobby">
+    <h1>BOMBERMAN</h1>
+    <div id="join-section">
+      <input type="text" id="nameInput" placeholder="Enter your name" maxlength="12" autocomplete="off">
+      <button id="joinBtn">Join Game</button>
+    </div>
+    <div id="lobby-info" style="display:none;">
+      <h2>Lobby</h2>
+      <div id="playerList"></div>
+      <div class="lobby-options">
+        <label>Map:
+          <select id="mapSelect"></select>
+        </label>
+        <label>Item Drop Rate: <span id="dropRateVal">30%</span>
+          <input type="range" id="dropRate" min="0" max="100" value="30">
+        </label>
+      </div>
+      <button id="startBtn" disabled>Start Game (need 2+ players)</button>
+    </div>
+  </div>
+
+  <!-- Game Screen -->
+  <div id="game" style="display:none;">
+    <div id="scoreboard"></div>
+    <canvas id="gameCanvas"></canvas>
+    <div id="mobile-controls">
+      <div id="dpad">
+        <button class="dpad-btn" id="dpad-up" data-dir="up">&#9650;</button>
+        <div class="dpad-mid-row">
+          <button class="dpad-btn" id="dpad-left" data-dir="left">&#9664;</button>
+          <div class="dpad-center"></div>
+          <button class="dpad-btn" id="dpad-right" data-dir="right">&#9654;</button>
+        </div>
+        <button class="dpad-btn" id="dpad-down" data-dir="down">&#9660;</button>
+      </div>
+      <button id="bombBtn">BOMB</button>
+    </div>
+  </div>
+
+  <!-- Round End Overlay -->
+  <div id="roundEnd" style="display:none;">
+    <div id="roundEndText"></div>
+  </div>
+
+  <script src="game.js"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js').catch(() => {});
+    }
+  </script>
+</body>
+</html>
