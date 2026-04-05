@@ -31,6 +31,19 @@ const playerList = document.getElementById('playerList');
 const scoreboard = document.getElementById('scoreboard');
 const roundEndDiv = document.getElementById('roundEnd');
 const roundEndText = document.getElementById('roundEndText');
+const gameHeader = document.getElementById('game-header');
+const quitBtn = document.getElementById('quitBtn');
+const quitModal = document.getElementById('quitModal');
+
+// --- Device ID (persistent, prevents same device joining twice) ---
+function getDeviceId() {
+  let id = localStorage.getItem('bomberman_device_id');
+  if (!id) {
+    id = Math.random().toString(36).slice(2) + Date.now().toString(36);
+    localStorage.setItem('bomberman_device_id', id);
+  }
+  return id;
+}
 
 // --- WebSocket Connection ---
 function connect() {
@@ -91,6 +104,11 @@ function handleMessage(msg) {
 
     case 'error':
       alert(msg.message);
+      // Re-enable join button if the error happened before joining
+      if (!myId) {
+        joinBtn.disabled = false;
+        joinBtn.textContent = 'Join Game';
+      }
       break;
   }
 }
@@ -131,16 +149,25 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
-// --- Scoreboard ---
+// --- Scoreboard with powerup badges ---
 function updateScoreboard(players) {
   scoreboard.innerHTML = players.map(p => {
-    let extras = '';
-    if (p.hasShield) extras += ' [Shield]';
-    if (p.curse) extras += ` [Cursed: ${p.curse}]`;
-    return `<div class="score-entry ${p.alive ? '' : 'score-dead'}">
+    const isMe = p.id === myId;
+    const badges = [];
+
+    if (p.bombRange > 1)  badges.push(`<span class="pu-badge pu-fire">F:${p.bombRange}</span>`);
+    if (p.maxBombs > 1)   badges.push(`<span class="pu-badge pu-bomb">B:${p.maxBombs}</span>`);
+    if (p.speed > 1)      badges.push(`<span class="pu-badge pu-speed">S:${p.speed}</span>`);
+    if (p.hasRemote)      badges.push(`<span class="pu-badge pu-remote">RC</span>`);
+    if (p.hasKick)        badges.push(`<span class="pu-badge pu-kick">K</span>`);
+    if (p.hasShield)      badges.push(`<span class="pu-badge pu-shield">SH</span>`);
+    if (p.curse)          badges.push(`<span class="pu-badge pu-curse">☠</span>`);
+
+    return `<div class="score-entry ${p.alive ? '' : 'score-dead'}${isMe ? ' score-me' : ''}">
       <div class="score-color" style="background:${p.color}"></div>
-      <span>${escapeHtml(p.name)}</span>
-      <span>${p.wins}W ${p.score}P${extras}</span>
+      <span class="score-name">${escapeHtml(p.name)}</span>
+      <span class="score-badges">${badges.join('')}</span>
+      <span class="score-stats">${p.wins}W ${p.score}P</span>
     </div>`;
   }).join('');
 }
@@ -157,17 +184,45 @@ function showRoundEnd(msg) {
   }
 }
 
+// --- Quit Button ---
+quitBtn.addEventListener('click', () => {
+  quitModal.style.display = 'flex';
+});
+
+document.getElementById('quitCancel').addEventListener('click', () => {
+  quitModal.style.display = 'none';
+});
+
+document.getElementById('quitConfirm').addEventListener('click', () => {
+  // Reload the page — disconnects WS and returns to lobby
+  window.location.reload();
+});
+
 // --- Canvas Resize ---
 function resizeCanvas() {
-  const scoreH = scoreboard.offsetHeight || 44;
-  const controlsH = document.getElementById('mobile-controls').offsetHeight || 0;
-  const availW = window.innerWidth;
-  const availH = window.innerHeight - scoreH - controlsH - 10;
+  const headerH = gameHeader.offsetHeight || 44;
+  const controls = document.getElementById('mobile-controls');
+  const isLandscape = window.innerWidth > window.innerHeight;
+  const isTouchDevice = window.matchMedia('(pointer: coarse)').matches;
+
+  let availW, availH;
+  if (isTouchDevice && isLandscape && controls.offsetWidth > 0) {
+    // Landscape: controls are to the right
+    const controlsW = controls.offsetWidth;
+    availW = window.innerWidth - controlsW;
+    availH = window.innerHeight - headerH;
+  } else {
+    // Portrait: controls are below
+    const controlsH = controls.offsetHeight || 0;
+    availW = window.innerWidth;
+    availH = window.innerHeight - headerH - controlsH;
+  }
 
   const targetW = GRID_W * TILE;
   const targetH = GRID_H * TILE;
 
-  scale = Math.min(availW / targetW, availH / targetH, 1.5);
+  scale = Math.min(availW / targetW, availH / targetH);
+  scale = Math.max(scale, 0.3); // never go below 30% scale
   canvas.width = Math.floor(targetW * scale);
   canvas.height = Math.floor(targetH * scale);
   canvas.style.width = canvas.width + 'px';
@@ -176,6 +231,10 @@ function resizeCanvas() {
 
 window.addEventListener('resize', () => {
   if (!inLobby) resizeCanvas();
+});
+
+window.addEventListener('orientationchange', () => {
+  if (!inLobby) setTimeout(resizeCanvas, 150);
 });
 
 // --- Rendering ---
@@ -443,6 +502,12 @@ document.addEventListener('keydown', (e) => {
     return;
   }
 
+  // Close quit modal with Escape
+  if (e.key === 'Escape') {
+    quitModal.style.display = 'none';
+    return;
+  }
+
   const key = e.key.toLowerCase();
   if (keysDown[key]) return;
   keysDown[key] = true;
@@ -524,15 +589,28 @@ document.getElementById('bombBtn').addEventListener('touchstart', (e) => {
 
 // --- Lobby Controls ---
 joinBtn.addEventListener('click', () => {
+  if (joinBtn.disabled) return;
+  joinBtn.disabled = true;
+  joinBtn.textContent = 'Joining...';
+
   const name = nameInput.value.trim() || 'Player';
   connect();
   // Wait for connection, then join
   const waitConnect = setInterval(() => {
     if (ws && ws.readyState === 1) {
       clearInterval(waitConnect);
-      send({ type: 'join', name });
+      send({ type: 'join', name, deviceId: getDeviceId() });
     }
   }, 100);
+
+  // Restore button if no response in 5s
+  setTimeout(() => {
+    clearInterval(waitConnect);
+    if (!myId) {
+      joinBtn.disabled = false;
+      joinBtn.textContent = 'Join Game';
+    }
+  }, 5000);
 });
 
 mapSelect.addEventListener('change', () => {

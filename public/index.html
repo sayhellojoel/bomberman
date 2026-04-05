@@ -35,8 +35,13 @@
 
   <!-- Game Screen -->
   <div id="game" style="display:none;">
-    <div id="scoreboard"></div>
-    <canvas id="gameCanvas"></canvas>
+    <div id="game-main">
+      <div id="game-header">
+        <div id="scoreboard"></div>
+        <button id="quitBtn">✕ Quit</button>
+      </div>
+      <canvas id="gameCanvas"></canvas>
+    </div>
     <div id="mobile-controls">
       <div id="dpad">
         <button class="dpad-btn" id="dpad-up" data-dir="up">&#9650;</button>
@@ -54,6 +59,17 @@
   <!-- Round End Overlay -->
   <div id="roundEnd" style="display:none;">
     <div id="roundEndText"></div>
+  </div>
+
+  <!-- Quit Confirmation Modal -->
+  <div id="quitModal" style="display:none;">
+    <div id="quitModalBox">
+      <p>Quit the game?</p>
+      <div class="quit-buttons">
+        <button id="quitConfirm">Yes, Quit</button>
+        <button id="quitCancel">Cancel</button>
+      </div>
+    </div>
   </div>
 
   <script src="game.js"></script>

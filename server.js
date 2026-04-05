@@ -54,6 +54,9 @@ let lastTick = Date.now();
 // Stats persist across rounds
 let stats = {};
 
+// Maps deviceId → playerId to prevent same device joining twice
+let deviceIdMap = {};
+
 // --- HTTP Server ---
 const mimeTypes = {
   '.html': 'text/html',
@@ -70,10 +73,10 @@ const server = http.createServer((req, res) => {
   const contentType = mimeTypes[ext] || 'application/octet-stream';
   fs.readFile(filePath, (err, data) => {
     if (err) {
-      res.writeHead(404);
+      res.writeHead(404, { 'ngrok-skip-browser-warning': 'true' });
       res.end('Not found');
     } else {
-      res.writeHead(200, { 'Content-Type': contentType });
+      res.writeHead(200, { 'Content-Type': contentType, 'ngrok-skip-browser-warning': 'true' });
       res.end(data);
     }
   });
@@ -543,6 +546,11 @@ wss.on('connection', (ws) => {
     try { msg = JSON.parse(data); } catch { return; }
 
     if (msg.type === 'join') {
+      // Prevent same device joining twice
+      if (msg.deviceId && deviceIdMap[msg.deviceId]) {
+        ws.send(JSON.stringify({ type: 'error', message: 'This device is already in the game.' }));
+        return;
+      }
       // Assign player slot
       if (playerOrder.length >= 4) {
         ws.send(JSON.stringify({ type: 'error', message: 'Game is full (max 4 players)' }));
@@ -554,6 +562,7 @@ wss.on('connection', (ws) => {
         name: msg.name || 'Player',
         color: COLORS[colorIndex],
         colorIndex,
+        deviceId: msg.deviceId || null,
         ws,
         x: 0, y: 0, alive: true,
         bombRange: 1, maxBombs: 1, activeBombs: 0, speed: 1,
@@ -564,6 +573,7 @@ wss.on('connection', (ws) => {
       };
       playerOrder.push(playerId);
       if (!stats[playerId]) stats[playerId] = { wins: 0, score: 0 };
+      if (msg.deviceId) deviceIdMap[msg.deviceId] = playerId;
 
       ws.send(JSON.stringify({ type: 'joined', playerId, colorIndex }));
       broadcastLobbyState();
@@ -607,6 +617,10 @@ wss.on('connection', (ws) => {
 
   ws.on('close', () => {
     if (playerId && players[playerId]) {
+      // Free up the device ID slot
+      const deviceId = players[playerId].deviceId;
+      if (deviceId) delete deviceIdMap[deviceId];
+
       players[playerId].alive = false;
       const idx = playerOrder.indexOf(playerId);
       if (idx !== -1) playerOrder.splice(idx, 1);
@@ -618,6 +632,7 @@ wss.on('connection', (ws) => {
         if (gameLoopInterval) clearInterval(gameLoopInterval);
         gameLoopInterval = null;
         stats = {};
+        deviceIdMap = {};
         roundEndTimer = null;
       }
 
