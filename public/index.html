@@ -15,8 +15,33 @@
   <div id="lobby">
     <h1>BOMBERMAN</h1>
     <div id="join-section">
-      <input type="text" id="nameInput" placeholder="Enter your name" maxlength="12" autocomplete="off">
-      <button id="joinBtn">Join Game</button>
+      <div class="join-name-row">
+        <input type="text" id="nameInput" placeholder="Enter your name" maxlength="12" autocomplete="off">
+        <button id="joinBtn">Join Game</button>
+      </div>
+      <p class="sprite-label">Choose your character</p>
+      <div id="sprite-picker">
+        <div class="sprite-card selected" data-sprite="Adam.png">
+          <img src="8%20bit%20originals/Adam.png" alt="Adam">
+          <span>Adam</span>
+        </div>
+        <div class="sprite-card" data-sprite="Dan.png">
+          <img src="8%20bit%20originals/Dan.png" alt="Dan">
+          <span>Dan</span>
+        </div>
+        <div class="sprite-card" data-sprite="Jer.png">
+          <img src="8%20bit%20originals/Jer.png" alt="Jer">
+          <span>Jer</span>
+        </div>
+        <div class="sprite-card" data-sprite="Joel.png">
+          <img src="8%20bit%20originals/Joel.png" alt="Joel">
+          <span>Joel</span>
+        </div>
+        <div class="sprite-card" data-sprite="Joel2.png">
+          <img src="8%20bit%20originals/Joel2.png" alt="Joel 2">
+          <span>Joel 2</span>
+        </div>
+      </div>
     </div>
     <div id="lobby-info" style="display:none;">
       <h2>Lobby</h2>

@@ -70,6 +70,34 @@ function updateTimer() {
   gameTimerEl.classList.toggle('timer-critical', elapsed >= 180);
 }
 
+// --- Sprite Images ---
+const SPRITES = ['Adam.png', 'Dan.png', 'Jer.png', 'Joel.png', 'Joel2.png'];
+const spriteImages = {};
+
+SPRITES.forEach(filename => {
+  const img = new Image();
+  img.src = `8%20bit%20originals/${encodeURIComponent(filename)}`;
+  spriteImages[filename] = img;
+});
+
+let selectedSprite = SPRITES[0]; // default: Adam
+
+// Sprite picker interaction
+document.querySelectorAll('.sprite-card').forEach(card => {
+  card.addEventListener('click', () => {
+    document.querySelectorAll('.sprite-card').forEach(c => c.classList.remove('selected'));
+    card.classList.add('selected');
+    selectedSprite = card.dataset.sprite;
+  });
+  // Also support touch
+  card.addEventListener('touchend', (e) => {
+    e.preventDefault();
+    document.querySelectorAll('.sprite-card').forEach(c => c.classList.remove('selected'));
+    card.classList.add('selected');
+    selectedSprite = card.dataset.sprite;
+  }, { passive: false });
+});
+
 // --- Device ID (persistent, prevents same device joining twice) ---
 function getDeviceId() {
   let id = localStorage.getItem('bomberman_device_id');
@@ -153,13 +181,16 @@ function handleMessage(msg) {
 // --- Lobby UI ---
 function updateLobbyUI(data) {
   // Player list
-  playerList.innerHTML = data.players.map(p =>
-    `<div class="player-tag">
-      <div class="player-color" style="background:${p.color}"></div>
-      <span>${escapeHtml(p.name)} (${p.colorName})</span>
+  playerList.innerHTML = data.players.map(p => {
+    const thumb = p.sprite
+      ? `<img class="player-sprite-thumb" src="8%20bit%20originals/${encodeURIComponent(p.sprite)}" alt="${escapeHtml(p.sprite)}">`
+      : `<div class="player-color" style="background:${p.color}"></div>`;
+    return `<div class="player-tag">
+      ${thumb}
+      <span>${escapeHtml(p.name)}</span>
       <span style="color:#ffd700;">${p.wins}W</span>
-    </div>`
-  ).join('');
+    </div>`;
+  }).join('');
 
   // Map select
   if (mapSelect.children.length !== data.maps.length) {
@@ -200,8 +231,11 @@ function updateScoreboard(players) {
     if (p.hasShield)      badges.push(`<span class="pu-badge pu-shield">SH</span>`);
     if (p.curse)          badges.push(`<span class="pu-badge pu-curse">☠</span>`);
 
+    const thumb = p.sprite
+      ? `<img class="score-sprite" src="8%20bit%20originals/${encodeURIComponent(p.sprite)}" alt="">`
+      : `<div class="score-color" style="background:${p.color}"></div>`;
     return `<div class="score-entry ${p.alive ? '' : 'score-dead'}${isMe ? ' score-me' : ''}">
-      <div class="score-color" style="background:${p.color}"></div>
+      ${thumb}
       <span class="score-name">${escapeHtml(p.name)}</span>
       <span class="score-badges">${badges.join('')}</span>
       <span class="score-stats">${p.wins}W ${p.score}P</span>
@@ -384,63 +418,87 @@ function drawPlayer(px, py, s, p) {
   if (p.invincibleTimer > 0 && Math.floor(Date.now() / 100) % 2 === 0) return;
 
   // Shadow
-  ctx.fillStyle = 'rgba(0,0,0,0.3)';
+  ctx.fillStyle = 'rgba(0,0,0,0.35)';
   ctx.beginPath();
-  ctx.ellipse(cx, cy + r * 0.6, r * 0.8, r * 0.3, 0, 0, Math.PI * 2);
+  ctx.ellipse(cx, py + s * 0.92, s * 0.32, s * 0.08, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  // Body (round Bomberman shape)
-  ctx.fillStyle = p.color;
-  ctx.beginPath();
-  ctx.arc(cx, cy - r * 0.1, r, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.strokeStyle = '#000';
-  ctx.lineWidth = 2;
-  ctx.stroke();
+  const img = p.sprite ? spriteImages[p.sprite] : null;
 
-  // Face
-  const eyeY = cy - r * 0.25;
-  const eyeOff = r * 0.25;
-  // Eyes
-  ctx.fillStyle = '#fff';
-  ctx.beginPath();
-  ctx.arc(cx - eyeOff, eyeY, r * 0.15, 0, Math.PI * 2);
-  ctx.arc(cx + eyeOff, eyeY, r * 0.15, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = '#000';
-  ctx.beginPath();
-  ctx.arc(cx - eyeOff, eyeY, r * 0.07, 0, Math.PI * 2);
-  ctx.arc(cx + eyeOff, eyeY, r * 0.07, 0, Math.PI * 2);
-  ctx.fill();
+  if (img && img.complete && img.naturalWidth > 0) {
+    // --- Sprite image rendering ---
+    // Draw with pixelated scaling; leave a tiny margin so shadow shows at bottom
+    const margin = s * 0.05;
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(img, px + margin, py + margin, s - margin * 2, s - margin * 2);
 
-  // Antenna/fuse on top
-  ctx.strokeStyle = '#000';
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(cx, cy - r * 0.1 - r);
-  ctx.lineTo(cx, cy - r * 0.1 - r - r * 0.4);
-  ctx.stroke();
-  // Fuse tip
-  ctx.fillStyle = '#ff6600';
-  ctx.beginPath();
-  ctx.arc(cx, cy - r * 0.1 - r - r * 0.4, r * 0.12, 0, Math.PI * 2);
-  ctx.fill();
+    // Shield: cyan circle around sprite
+    if (p.hasShield) {
+      ctx.strokeStyle = '#00ffff';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(cx, cy, r + 4, 0, Math.PI * 2);
+      ctx.stroke();
+    }
 
-  // Shield indicator
-  if (p.hasShield) {
-    ctx.strokeStyle = '#00ffff';
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.arc(cx, cy - r * 0.1, r + 4, 0, Math.PI * 2);
-    ctx.stroke();
-  }
+    // Curse: purple tint overlay
+    if (p.curse) {
+      ctx.fillStyle = 'rgba(128, 0, 128, 0.28)';
+      ctx.fillRect(px + margin, py + margin, s - margin * 2, s - margin * 2);
+    }
 
-  // Curse indicator (purple tint)
-  if (p.curse) {
-    ctx.fillStyle = 'rgba(128, 0, 128, 0.3)';
+  } else {
+    // --- Fallback: drawn Bomberman shape ---
+    ctx.fillStyle = p.color;
     ctx.beginPath();
     ctx.arc(cx, cy - r * 0.1, r, 0, Math.PI * 2);
     ctx.fill();
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Face
+    const eyeY = cy - r * 0.25;
+    const eyeOff = r * 0.25;
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.arc(cx - eyeOff, eyeY, r * 0.15, 0, Math.PI * 2);
+    ctx.arc(cx + eyeOff, eyeY, r * 0.15, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#000';
+    ctx.beginPath();
+    ctx.arc(cx - eyeOff, eyeY, r * 0.07, 0, Math.PI * 2);
+    ctx.arc(cx + eyeOff, eyeY, r * 0.07, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Antenna
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - r * 0.1 - r);
+    ctx.lineTo(cx, cy - r * 0.1 - r - r * 0.4);
+    ctx.stroke();
+    ctx.fillStyle = '#ff6600';
+    ctx.beginPath();
+    ctx.arc(cx, cy - r * 0.1 - r - r * 0.4, r * 0.12, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Shield indicator
+    if (p.hasShield) {
+      ctx.strokeStyle = '#00ffff';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(cx, cy - r * 0.1, r + 4, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    // Curse tint
+    if (p.curse) {
+      ctx.fillStyle = 'rgba(128, 0, 128, 0.3)';
+      ctx.beginPath();
+      ctx.arc(cx, cy - r * 0.1, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
 }
 
@@ -640,7 +698,7 @@ joinBtn.addEventListener('click', () => {
   const waitConnect = setInterval(() => {
     if (ws && ws.readyState === 1) {
       clearInterval(waitConnect);
-      send({ type: 'join', name, deviceId: getDeviceId() });
+      send({ type: 'join', name, deviceId: getDeviceId(), sprite: selectedSprite });
     }
   }, 100);
 

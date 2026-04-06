@@ -41,9 +41,25 @@ body {
 
 #join-section {
   display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.join-name-row {
+  display: flex;
   gap: 10px;
   justify-content: center;
-  margin-bottom: 20px;
+  width: 100%;
+}
+
+.sprite-label {
+  font-size: 0.8rem;
+  color: #888;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  margin-bottom: -4px;
 }
 
 #nameInput {
@@ -115,6 +131,53 @@ button:active { transform: scale(0.95); }
   border: 2px solid #fff;
   flex-shrink: 0;
 }
+
+/* Sprite picker */
+#sprite-picker {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin: 4px 0 8px;
+}
+
+.sprite-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 6px;
+  border-radius: 10px;
+  border: 2px solid #444;
+  background: #16213e;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, transform 0.1s;
+  width: 68px;
+}
+
+.sprite-card img {
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
+  image-rendering: pixelated;
+  border-radius: 4px;
+}
+
+.sprite-card span {
+  font-size: 0.65rem;
+  color: #aaa;
+  font-weight: bold;
+  text-align: center;
+}
+
+.sprite-card:active { transform: scale(0.95); }
+
+.sprite-card.selected {
+  border-color: #ff6b35;
+  background: rgba(255, 107, 53, 0.15);
+}
+
+.sprite-card.selected span { color: #ff6b35; }
 
 .lobby-options {
   display: flex;
@@ -232,6 +295,26 @@ button:active { transform: scale(0.95); }
   height: 12px;
   border-radius: 50%;
   border: 2px solid #fff;
+  flex-shrink: 0;
+}
+
+/* Sprite thumbnail in scoreboard */
+.score-sprite {
+  width: 22px;
+  height: 22px;
+  object-fit: contain;
+  image-rendering: pixelated;
+  flex-shrink: 0;
+  border-radius: 3px;
+}
+
+/* Sprite thumbnail in lobby player list */
+.player-sprite-thumb {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+  image-rendering: pixelated;
+  border-radius: 4px;
   flex-shrink: 0;
 }
 
@@ -400,9 +483,13 @@ button:active { transform: scale(0.95); }
   }
 
   #join-section {
-    flex-direction: column;
     gap: 12px;
     align-items: stretch;
+  }
+
+  .join-name-row {
+    flex-direction: column;
+    gap: 10px;
   }
 
   #nameInput {
@@ -415,6 +502,20 @@ button:active { transform: scale(0.95); }
     width: 100%;
     font-size: 1.15rem;
     padding: 14px 20px;
+  }
+
+  #sprite-picker {
+    gap: 6px;
+  }
+
+  .sprite-card {
+    width: 58px;
+    padding: 5px;
+  }
+
+  .sprite-card img {
+    width: 42px;
+    height: 42px;
   }
 
   #playerList {

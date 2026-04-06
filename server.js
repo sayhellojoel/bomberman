@@ -68,7 +68,9 @@ const mimeTypes = {
 };
 
 const server = http.createServer((req, res) => {
-  let filePath = path.join(__dirname, 'public', req.url === '/' ? 'index.html' : req.url);
+  // Decode URL so paths with spaces (e.g. "8 bit originals") resolve correctly
+  const decodedUrl = decodeURIComponent(req.url.split('?')[0]);
+  let filePath = path.join(__dirname, 'public', decodedUrl === '/' ? 'index.html' : decodedUrl);
   const ext = path.extname(filePath);
   const contentType = mimeTypes[ext] || 'application/octet-stream';
   fs.readFile(filePath, (err, data) => {
@@ -95,6 +97,7 @@ function broadcast(msg) {
 function broadcastLobbyState() {
   const playerList = playerOrder.map(id => ({
     id, name: players[id].name, color: players[id].color, colorName: COLOR_NAMES[players[id].colorIndex],
+    sprite: players[id].sprite || null,
     wins: stats[id] ? stats[id].wins : 0, score: stats[id] ? stats[id].score : 0
   }));
   broadcast({
@@ -111,6 +114,7 @@ function getGameState() {
     const p = players[id];
     return {
       id, name: p.name, color: p.color, colorName: COLOR_NAMES[p.colorIndex],
+      sprite: p.sprite || null,
       x: p.x, y: p.y, alive: p.alive,
       bombRange: p.bombRange, maxBombs: p.maxBombs, speed: p.speed,
       hasRemote: p.hasRemote, hasKick: p.hasKick, hasShield: p.hasShield,
@@ -558,10 +562,15 @@ wss.on('connection', (ws) => {
       }
       playerId = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
       const colorIndex = playerOrder.length;
+      // Validate sprite is one of the known filenames
+      const VALID_SPRITES = ['Adam.png', 'Dan.png', 'Jer.png', 'Joel.png', 'Joel2.png'];
+      const sprite = VALID_SPRITES.includes(msg.sprite) ? msg.sprite : 'Adam.png';
+
       players[playerId] = {
         name: msg.name || 'Player',
         color: COLORS[colorIndex],
         colorIndex,
+        sprite,
         deviceId: msg.deviceId || null,
         ws,
         x: 0, y: 0, alive: true,
