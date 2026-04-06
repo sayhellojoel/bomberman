@@ -22,10 +22,12 @@
       <h2>Lobby</h2>
       <div id="playerList"></div>
       <div class="lobby-options">
-        <label>Map:
+        <label class="lobby-option-row">
+          <span class="option-label">Map</span>
           <select id="mapSelect"></select>
         </label>
-        <label>Item Drop Rate: <span id="dropRateVal">30%</span>
+        <label class="lobby-option-row">
+          <span class="option-label">Item Drop Rate <span id="dropRateVal">30%</span></span>
           <input type="range" id="dropRate" min="0" max="100" value="30">
         </label>
       </div>
@@ -35,14 +37,9 @@
 
   <!-- Game Screen -->
   <div id="game" style="display:none;">
-    <div id="game-main">
-      <div id="game-header">
-        <div id="scoreboard"></div>
-        <button id="quitBtn">✕ Quit</button>
-      </div>
-      <canvas id="gameCanvas"></canvas>
-    </div>
-    <div id="mobile-controls">
+
+    <!-- Left panel: D-pad (portrait=bottom-left, landscape=left side) -->
+    <div id="game-ctrl-dpad">
       <div id="dpad">
         <button class="dpad-btn" id="dpad-up" data-dir="up">&#9650;</button>
         <div class="dpad-mid-row">
@@ -52,8 +49,23 @@
         </div>
         <button class="dpad-btn" id="dpad-down" data-dir="down">&#9660;</button>
       </div>
+    </div>
+
+    <!-- Center: header + canvas -->
+    <div id="game-main">
+      <div id="game-header">
+        <div id="scoreboard"></div>
+        <div id="game-timer">0:00</div>
+        <button id="quitBtn">✕ Quit</button>
+      </div>
+      <canvas id="gameCanvas"></canvas>
+    </div>
+
+    <!-- Right panel: Bomb button (portrait=bottom-right, landscape=right side) -->
+    <div id="game-ctrl-bomb">
       <button id="bombBtn">BOMB</button>
     </div>
+
   </div>
 
   <!-- Round End Overlay -->

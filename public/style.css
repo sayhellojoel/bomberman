@@ -15,10 +15,14 @@ body {
   -webkit-user-select: none;
 }
 
-/* Lobby */
+/* =====================
+   LOBBY
+   ===================== */
 #lobby {
   text-align: center;
   padding: 20px;
+  width: 100%;
+  max-width: 520px;
 }
 
 #lobby h1 {
@@ -51,6 +55,7 @@ body {
   color: #eee;
   outline: none;
   width: 200px;
+  min-width: 0;
 }
 
 button {
@@ -68,6 +73,7 @@ button:active { transform: scale(0.95); }
 #joinBtn {
   background: #ff6b35;
   color: #fff;
+  white-space: nowrap;
 }
 
 #startBtn {
@@ -76,6 +82,7 @@ button:active { transform: scale(0.95); }
   font-size: 1.2rem;
   padding: 12px 30px;
   margin-top: 16px;
+  width: 100%;
 }
 
 #startBtn:disabled {
@@ -85,7 +92,7 @@ button:active { transform: scale(0.95); }
 
 #playerList {
   display: flex;
-  gap: 16px;
+  gap: 12px;
   justify-content: center;
   flex-wrap: wrap;
   margin-bottom: 16px;
@@ -106,51 +113,82 @@ button:active { transform: scale(0.95); }
   height: 20px;
   border-radius: 50%;
   border: 2px solid #fff;
+  flex-shrink: 0;
 }
 
 .lobby-options {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  align-items: center;
+  gap: 10px;
   margin: 16px 0;
+  text-align: left;
 }
 
-.lobby-options label {
-  font-size: 1rem;
+/* Each label row: label text on top, control below */
+.lobby-option-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: #16213e;
+  padding: 10px 14px;
+  border-radius: 8px;
+  border: 1px solid #333;
+}
+
+.option-label {
+  font-size: 0.9rem;
+  color: #aaa;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
 }
 
-.lobby-options select, .lobby-options input[type="range"] {
-  padding: 4px;
+#dropRateVal {
+  color: #ff6b35;
+  font-weight: bold;
+}
+
+.lobby-options select,
+.lobby-options input[type="range"] {
+  width: 100%;
+  padding: 6px 4px;
   font-size: 1rem;
-  background: #16213e;
+  background: #0f0f23;
   color: #eee;
-  border: 1px solid #555;
+  border: 1px solid #444;
   border-radius: 4px;
 }
 
-/* Game */
+/* =====================
+   GAME LAYOUT (CSS Grid)
+   ===================== */
+
+/* Desktop / no-touch: just the canvas, no side panels */
 #game {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
+  display: grid;
+  grid-template-columns: 1fr;
+  grid-template-rows: 1fr;
+  grid-template-areas: "main";
   height: 100vh;
   width: 100vw;
 }
 
 #game-main {
+  grid-area: main;
   display: flex;
   flex-direction: column;
   align-items: center;
-  flex: 1;
+  min-width: 0;
   min-height: 0;
-  width: 100%;
+  overflow: hidden;
 }
 
-/* Game header: scoreboard + quit button */
+#game-ctrl-dpad,
+#game-ctrl-bomb {
+  display: none; /* hidden on desktop */
+}
+
+/* Game header: scoreboard + timer + quit */
 #game-header {
   display: flex;
   align-items: center;
@@ -162,7 +200,7 @@ button:active { transform: scale(0.95); }
 
 #scoreboard {
   display: flex;
-  gap: 12px;
+  gap: 10px;
   justify-content: center;
   flex-wrap: wrap;
   padding: 6px 10px;
@@ -170,6 +208,7 @@ button:active { transform: scale(0.95); }
   min-height: 44px;
   align-items: center;
   overflow: hidden;
+  min-width: 0;
 }
 
 .score-entry {
@@ -214,7 +253,7 @@ button:active { transform: scale(0.95); }
   white-space: nowrap;
 }
 
-/* Powerup badges in scoreboard */
+/* Powerup badges */
 .score-badges {
   display: flex;
   gap: 2px;
@@ -239,6 +278,21 @@ button:active { transform: scale(0.95); }
 .pu-shield { background: #00888a; color: #fff; }
 .pu-curse  { background: #5a1080; color: #ff44ff; }
 
+/* Game timer */
+#game-timer {
+  font-size: 1rem;
+  font-weight: bold;
+  font-family: 'Courier New', monospace;
+  color: #ffd700;
+  padding: 0 10px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  letter-spacing: 0;
+}
+
+#game-timer.timer-warning  { color: #ff6b35; }
+#game-timer.timer-critical { color: #ff3333; }
+
 /* Quit button */
 #quitBtn {
   padding: 6px 12px;
@@ -259,16 +313,9 @@ button:active { transform: scale(0.95); }
   image-rendering: pixelated;
 }
 
-/* Mobile Controls */
-#mobile-controls {
-  display: none;
-  justify-content: space-around;
-  align-items: center;
-  width: 100%;
-  padding: 10px 20px;
-  gap: 20px;
-  flex-shrink: 0;
-}
+/* =====================
+   D-PAD & BOMB BUTTON
+   ===================== */
 
 #dpad {
   display: flex;
@@ -297,9 +344,7 @@ button:active { transform: scale(0.95); }
   padding: 0;
 }
 
-.dpad-btn:active {
-  background: #ff6b35;
-}
+.dpad-btn:active { background: #ff6b35; }
 
 .dpad-center {
   width: 56px;
@@ -317,9 +362,180 @@ button:active { transform: scale(0.95); }
   font-size: 1.1rem;
   font-weight: bold;
   border: 3px solid #fff;
+  /* Fix centering: override generic button padding */
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
 }
 
-/* Round End Overlay */
+/* =====================
+   MOBILE PORTRAIT
+   Touch devices in portrait: dpad bottom-left, bomb bottom-right
+   ===================== */
+@media (pointer: coarse) and (orientation: portrait),
+       (max-width: 600px) and (orientation: portrait) {
+
+  body {
+    justify-content: flex-start;
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+
+  /* Lobby: full-width, stacked layout */
+  #lobby {
+    max-width: 100%;
+    padding: 28px 20px 20px;
+  }
+
+  #lobby h1 {
+    font-size: 2.4rem;
+    letter-spacing: 3px;
+    margin-bottom: 20px;
+  }
+
+  #lobby h2 {
+    font-size: 1.2rem;
+  }
+
+  #join-section {
+    flex-direction: column;
+    gap: 12px;
+    align-items: stretch;
+  }
+
+  #nameInput {
+    width: 100%;
+    font-size: 1.15rem;
+    padding: 14px 16px;
+  }
+
+  #joinBtn {
+    width: 100%;
+    font-size: 1.15rem;
+    padding: 14px 20px;
+  }
+
+  #playerList {
+    justify-content: flex-start;
+  }
+
+  .player-tag {
+    font-size: 0.9rem;
+    padding: 8px 10px;
+  }
+
+  .lobby-options {
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .lobby-option-row {
+    padding: 12px 14px;
+  }
+
+  #startBtn {
+    font-size: 1.15rem;
+    padding: 16px;
+  }
+
+  /* Game grid: main on top, dpad bottom-left, bomb bottom-right */
+  #game {
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: 1fr auto;
+    grid-template-areas:
+      "main main"
+      "ctrl-dpad ctrl-bomb";
+  }
+
+  #game-ctrl-dpad {
+    grid-area: ctrl-dpad;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 12px 8px 16px;
+  }
+
+  #game-ctrl-bomb {
+    grid-area: ctrl-bomb;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 12px 8px 16px;
+  }
+}
+
+/* =====================
+   MOBILE LANDSCAPE
+   Touch devices in landscape: dpad left, map center, bomb right
+   ===================== */
+@media (pointer: coarse) and (orientation: landscape) {
+
+  #game {
+    grid-template-columns: 164px 1fr 114px;
+    grid-template-rows: 100vh;
+    grid-template-areas: "ctrl-dpad main ctrl-bomb";
+  }
+
+  #game-ctrl-dpad {
+    grid-area: ctrl-dpad;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    /* Offset down by header height so controls align with the canvas */
+    padding-top: 44px;
+  }
+
+  #game-ctrl-bomb {
+    grid-area: ctrl-bomb;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding-top: 44px;
+  }
+
+  /* Slightly smaller dpad buttons to fit the column */
+  .dpad-btn {
+    width: 50px;
+    height: 50px;
+    font-size: 1.2rem;
+  }
+
+  .dpad-center {
+    width: 50px;
+    height: 50px;
+  }
+
+  #bombBtn {
+    width: 80px;
+    height: 80px;
+    font-size: 1rem;
+  }
+
+  /* Compact scoreboard */
+  #scoreboard {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    gap: 8px;
+    padding: 4px 8px;
+    min-height: 36px;
+  }
+
+  .score-entry {
+    font-size: 0.75rem;
+    flex-shrink: 0;
+  }
+
+  #game-timer {
+    font-size: 0.9rem;
+    padding: 0 6px;
+  }
+}
+
+/* =====================
+   ROUND END OVERLAY
+   ===================== */
 #roundEnd {
   position: fixed;
   top: 0; left: 0; right: 0; bottom: 0;
@@ -338,7 +554,9 @@ button:active { transform: scale(0.95); }
   padding: 30px;
 }
 
-/* Quit Modal */
+/* =====================
+   QUIT MODAL
+   ===================== */
 #quitModal {
   position: fixed;
   top: 0; left: 0; right: 0; bottom: 0;
@@ -379,71 +597,4 @@ button:active { transform: scale(0.95); }
   background: #444;
   color: #eee;
   padding: 10px 24px;
-}
-
-/* Show mobile controls on touch devices or small screens */
-@media (pointer: coarse) {
-  #mobile-controls { display: flex; }
-}
-
-@media (max-width: 600px) {
-  #mobile-controls { display: flex; }
-  #lobby h1 { font-size: 2rem; }
-}
-
-/* Landscape layout on touch devices: controls move to the right */
-@media (pointer: coarse) and (orientation: landscape) {
-  #game {
-    flex-direction: row;
-    align-items: stretch;
-  }
-
-  #game-main {
-    flex: 1;
-    min-width: 0;
-  }
-
-  #mobile-controls {
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    align-items: center;
-    width: 170px;
-    height: 100vh;
-    padding: 8px 6px;
-    gap: 10px;
-    flex-shrink: 0;
-  }
-
-  /* Slightly smaller dpad buttons in landscape to save space */
-  .dpad-btn {
-    width: 50px;
-    height: 50px;
-    font-size: 1.2rem;
-  }
-
-  .dpad-center {
-    width: 50px;
-    height: 50px;
-  }
-
-  #bombBtn {
-    width: 76px;
-    height: 76px;
-    font-size: 0.95rem;
-  }
-
-  /* Compact scoreboard in landscape */
-  #scoreboard {
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    gap: 8px;
-    padding: 4px 8px;
-    min-height: 36px;
-  }
-
-  .score-entry {
-    font-size: 0.75rem;
-    flex-shrink: 0;
-  }
 }

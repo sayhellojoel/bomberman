@@ -32,8 +32,43 @@ const scoreboard = document.getElementById('scoreboard');
 const roundEndDiv = document.getElementById('roundEnd');
 const roundEndText = document.getElementById('roundEndText');
 const gameHeader = document.getElementById('game-header');
+const gameTimerEl = document.getElementById('game-timer');
 const quitBtn = document.getElementById('quitBtn');
 const quitModal = document.getElementById('quitModal');
+const ctrlDpad = document.getElementById('game-ctrl-dpad');
+const ctrlBomb = document.getElementById('game-ctrl-bomb');
+
+// --- Game Timer ---
+let gameStartTime = null;
+let timerInterval = null;
+
+function startTimer() {
+  gameStartTime = Date.now();
+  if (timerInterval) clearInterval(timerInterval);
+  timerInterval = setInterval(updateTimer, 500); // update twice/sec for accuracy
+  updateTimer();
+}
+
+function stopTimer() {
+  if (timerInterval) clearInterval(timerInterval);
+  timerInterval = null;
+  gameStartTime = null;
+  if (gameTimerEl) {
+    gameTimerEl.textContent = '0:00';
+    gameTimerEl.className = '';
+  }
+}
+
+function updateTimer() {
+  if (!gameStartTime) return;
+  const elapsed = Math.floor((Date.now() - gameStartTime) / 1000);
+  const mins = Math.floor(elapsed / 60);
+  const secs = elapsed % 60;
+  gameTimerEl.textContent = `${mins}:${secs.toString().padStart(2, '0')}`;
+  // Colour shifts: yellow → orange (2 min) → red (3 min)
+  gameTimerEl.classList.toggle('timer-warning',  elapsed >= 120 && elapsed < 180);
+  gameTimerEl.classList.toggle('timer-critical', elapsed >= 180);
+}
 
 // --- Device ID (persistent, prevents same device joining twice) ---
 function getDeviceId() {
@@ -82,15 +117,17 @@ function handleMessage(msg) {
       lobbyDiv.style.display = 'block';
       gameDiv.style.display = 'none';
       roundEndDiv.style.display = 'none';
+      stopTimer();
       updateLobbyUI(msg);
       break;
 
     case 'gameStart':
       inLobby = false;
       lobbyDiv.style.display = 'none';
-      gameDiv.style.display = 'flex';
+      gameDiv.style.display = 'grid';
       roundEndDiv.style.display = 'none';
       resizeCanvas();
+      startTimer();
       break;
 
     case 'gameState':
@@ -201,21 +238,25 @@ document.getElementById('quitConfirm').addEventListener('click', () => {
 // --- Canvas Resize ---
 function resizeCanvas() {
   const headerH = gameHeader.offsetHeight || 44;
-  const controls = document.getElementById('mobile-controls');
   const isLandscape = window.innerWidth > window.innerHeight;
   const isTouchDevice = window.matchMedia('(pointer: coarse)').matches;
 
   let availW, availH;
-  if (isTouchDevice && isLandscape && controls.offsetWidth > 0) {
-    // Landscape: controls are to the right
-    const controlsW = controls.offsetWidth;
-    availW = window.innerWidth - controlsW;
+  if (isTouchDevice && isLandscape) {
+    // Landscape: dpad on left, bomb on right — measure their widths
+    const dpadW = ctrlDpad.offsetWidth || 164;
+    const bombW = ctrlBomb.offsetWidth || 114;
+    availW = window.innerWidth - dpadW - bombW;
     availH = window.innerHeight - headerH;
-  } else {
-    // Portrait: controls are below
-    const controlsH = controls.offsetHeight || 0;
+  } else if (isTouchDevice || window.innerWidth <= 600) {
+    // Portrait: controls sit below as a separate grid row
+    const ctrlH = ctrlDpad.offsetHeight || 0;
     availW = window.innerWidth;
-    availH = window.innerHeight - headerH - controlsH;
+    availH = window.innerHeight - headerH - ctrlH;
+  } else {
+    // Desktop: full window minus header
+    availW = window.innerWidth;
+    availH = window.innerHeight - headerH;
   }
 
   const targetW = GRID_W * TILE;
