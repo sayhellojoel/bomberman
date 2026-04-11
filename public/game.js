@@ -337,10 +337,44 @@ window.addEventListener('orientationchange', () => {
   if (!inLobby) setTimeout(resizeCanvas, 150);
 });
 
+// --- Client-side interpolation state ---
+// Tracks smooth render positions for each player, updated every animation frame
+const renderPos = {}; // playerId → { rx, ry }
+let lastRenderTime = null;
+
+function updateRenderPositions(now) {
+  if (!gameState) return;
+  const dt = lastRenderTime ? (now - lastRenderTime) / 1000 : 0;
+  lastRenderTime = now;
+
+  gameState.players.forEach(p => {
+    if (!renderPos[p.id]) {
+      renderPos[p.id] = { rx: p.x, ry: p.y };
+    }
+    const r = renderPos[p.id];
+
+    if (p.moving) {
+      // Advance client-side interpolation at the same speed as the server
+      const baseSpeed = 4 + (p.speed - 1) * 1.2;
+      // Use server moveProgress as a lower bound so we never lag behind
+      const clientProgress = p.moveProgress + baseSpeed * dt;
+      const prog = Math.min(clientProgress, 1);
+      r.rx = p.x + (p.targetX - p.x) * prog;
+      r.ry = p.y + (p.targetY - p.y) * prog;
+    } else {
+      // Not moving — snap to confirmed tile position
+      r.rx = p.x;
+      r.ry = p.y;
+    }
+  });
+}
+
 // --- Rendering ---
-function render() {
+function render(now) {
   requestAnimationFrame(render);
   if (inLobby || !gameState) return;
+
+  updateRenderPositions(now);
 
   const s = TILE * scale;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -424,12 +458,9 @@ function render() {
   // Draw players
   gameState.players.forEach(p => {
     if (!p.alive) return;
-    let px, py;
-    // Interpolate position
-    if (p.id === myId || true) {
-      px = p.x * s;
-      py = p.y * s;
-    }
+    const r = renderPos[p.id] || { rx: p.x, ry: p.y };
+    const px = r.rx * s;
+    const py = r.ry * s;
     drawPlayer(px, py, s, p);
   });
 }

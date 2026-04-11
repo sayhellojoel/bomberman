@@ -136,6 +136,7 @@ function getGameState() {
       id, name: p.name, color: p.color, colorName: COLOR_NAMES[p.colorIndex],
       sprite: p.sprite || null,
       x: p.x, y: p.y, alive: p.alive,
+      moving: p.moving, targetX: p.targetX, targetY: p.targetY, moveProgress: p.moveProgress,
       bombRange: p.bombRange, maxBombs: p.maxBombs, speed: p.speed,
       hasRemote: p.hasRemote, hasKick: p.hasKick, hasShield: p.hasShield,
       curse: p.curse, curseTimer: p.curseTimer,
