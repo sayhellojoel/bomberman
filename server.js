@@ -50,6 +50,9 @@ let selectedMap = 0;
 let itemDropRate = 0.3;
 let gameLoopInterval = null;
 let lastTick = Date.now();
+let ticksSinceBroadcast = 0;
+const BROADCAST_EVERY = 3; // broadcast at 20Hz (every 3rd tick of 60Hz loop)
+let gridDirty = true; // send grid on first broadcast and whenever a block is destroyed
 
 // Stats persist across rounds
 let stats = {};
@@ -146,15 +149,20 @@ function getGameState() {
       invincibleTimer: p.invincibleTimer
     };
   });
-  return {
+  const state = {
     type: 'gameState',
     players: playerList,
-    grid,
     bombs: bombs.map(b => ({ x: b.x, y: b.y, owner: b.owner, timer: b.timer, remote: b.remote })),
     explosions: explosions.map(e => ({ x: e.x, y: e.y, timer: e.timer })),
     powerups: powerups.map(p => ({ x: p.x, y: p.y, kind: p.kind })),
     kickedBombs: kickedBombs.map(b => ({ x: b.x, y: b.y, dx: b.dx, dy: b.dy }))
   };
+  // Only include grid when it has changed (saves ~1KB per broadcast)
+  if (gridDirty) {
+    state.grid = grid;
+    gridDirty = false;
+  }
+  return state;
 }
 
 // --- Map Generation ---
@@ -215,6 +223,7 @@ function applyRandomCurse(player) {
 function startGame() {
   lobby = false;
   grid = generateGrid(selectedMap);
+  gridDirty = true;
   bombs = [];
   explosions = [];
   powerups = [];
@@ -452,8 +461,12 @@ function gameTickInner() {
     }, 100);
   }
 
-  // Broadcast state
-  broadcast(getGameState());
+  // Broadcast at 20Hz (every 3rd tick) — client interpolation fills the gaps
+  ticksSinceBroadcast++;
+  if (ticksSinceBroadcast >= BROADCAST_EVERY) {
+    ticksSinceBroadcast = 0;
+    broadcast(getGameState());
+  }
 }
 
 function placeBomb(playerId) {
@@ -494,6 +507,7 @@ function explodeBomb(index) {
       if (grid[ey][ex] === 'B') {
         // Destroy soft block
         grid[ey][ex] = '_';
+        gridDirty = true;
         addExplosion(ex, ey);
         // Chance to spawn power-up
         if (Math.random() < itemDropRate) {

@@ -184,6 +184,8 @@ function handleMessage(msg) {
       break;
 
     case 'gameState':
+      // Grid is only sent when it changes — preserve the last known grid otherwise
+      if (!msg.grid && gameState) msg.grid = gameState.grid;
       gameState = msg;
       updateScoreboard(msg.players);
       break;
