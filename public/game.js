@@ -97,24 +97,29 @@ function buildSpritePicker(sprites) {
     picker.appendChild(card);
   });
 
-  if (sprites.length > 0) selectedSprite = sprites[0];
+  if (sprites.length > 0) {
+    selectedSprite = sprites[0];
+    nameInput.value = sprites[0].replace(/\.[^.]+$/, '');
+  }
+}
+
+function selectSprite(filename) {
+  selectedSprite = filename;
+  nameInput.value = filename.replace(/\.[^.]+$/, '');
+  document.querySelectorAll('.sprite-card').forEach(c =>
+    c.classList.toggle('selected', c.dataset.sprite === filename));
 }
 
 // Event delegation for sprite picker
 document.getElementById('sprite-picker').addEventListener('click', (e) => {
   const card = e.target.closest('.sprite-card');
-  if (!card) return;
-  document.querySelectorAll('.sprite-card').forEach(c => c.classList.remove('selected'));
-  card.classList.add('selected');
-  selectedSprite = card.dataset.sprite;
+  if (card) selectSprite(card.dataset.sprite);
 });
 document.getElementById('sprite-picker').addEventListener('touchend', (e) => {
   const card = e.target.closest('.sprite-card');
   if (!card) return;
   e.preventDefault();
-  document.querySelectorAll('.sprite-card').forEach(c => c.classList.remove('selected'));
-  card.classList.add('selected');
-  selectedSprite = card.dataset.sprite;
+  selectSprite(card.dataset.sprite);
 }, { passive: false });
 
 // Fetch sprite list from server and build picker
@@ -735,25 +740,56 @@ function startMoveRepeat(key) {
   }, 120);
 }
 
-// Mobile controls
-document.querySelectorAll('.dpad-btn').forEach(btn => {
-  let interval = null;
-  const dir = btn.dataset.dir;
+// Mobile controls — unified zone handler on the whole dpad container
+// Direction is computed from touch position relative to center, not per-button hit detection.
+// This makes edges, glancing touches, and finger slides all work naturally.
+const dpadEl = document.getElementById('dpad');
+let dpadInterval = null;
+let dpadCurrentDir = null;
 
-  const start = (e) => {
-    e.preventDefault();
+function dpadDirFromTouch(touch) {
+  const rect = dpadEl.getBoundingClientRect();
+  const cx = rect.left + rect.width / 2;
+  const cy = rect.top + rect.height / 2;
+  const dx = touch.clientX - cx;
+  const dy = touch.clientY - cy;
+  if (Math.abs(dx) < 6 && Math.abs(dy) < 6) return null; // dead zone at center
+  return Math.abs(dx) > Math.abs(dy)
+    ? (dx > 0 ? 'right' : 'left')
+    : (dy > 0 ? 'down' : 'up');
+}
+
+function dpadActivate(dir) {
+  if (dir === dpadCurrentDir) return;
+  dpadCurrentDir = dir;
+  clearInterval(dpadInterval);
+  // Highlight active button
+  document.querySelectorAll('.dpad-btn').forEach(b =>
+    b.classList.toggle('dpad-active', b.dataset.dir === dir));
+  if (dir) {
     send({ type: 'input', action: 'move', dir });
-    interval = setInterval(() => send({ type: 'input', action: 'move', dir }), 120);
-  };
-  const stop = (e) => {
-    e.preventDefault();
-    clearInterval(interval);
-  };
+    dpadInterval = setInterval(() => send({ type: 'input', action: 'move', dir }), 120);
+  } else {
+    dpadInterval = null;
+  }
+}
 
-  btn.addEventListener('touchstart', start, { passive: false });
-  btn.addEventListener('touchend', stop, { passive: false });
-  btn.addEventListener('touchcancel', stop, { passive: false });
-});
+function dpadStop() {
+  dpadActivate(null);
+}
+
+dpadEl.addEventListener('touchstart', (e) => {
+  e.preventDefault();
+  dpadActivate(dpadDirFromTouch(e.touches[0]));
+}, { passive: false });
+
+dpadEl.addEventListener('touchmove', (e) => {
+  e.preventDefault();
+  dpadActivate(dpadDirFromTouch(e.touches[0]));
+}, { passive: false });
+
+dpadEl.addEventListener('touchend', (e) => { e.preventDefault(); dpadStop(); }, { passive: false });
+dpadEl.addEventListener('touchcancel', (e) => { e.preventDefault(); dpadStop(); }, { passive: false });
 
 document.getElementById('bombBtn').addEventListener('touchstart', (e) => {
   e.preventDefault();
