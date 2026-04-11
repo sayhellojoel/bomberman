@@ -176,7 +176,13 @@ function getGameState() {
     bombs: bombs.map(b => ({ x: b.x, y: b.y, owner: b.owner, timer: b.timer, remote: b.remote })),
     explosions: explosions.map(e => ({ x: e.x, y: e.y, timer: e.timer })),
     powerups: powerups.map(p => ({ x: p.x, y: p.y, kind: p.kind })),
-    kickedBombs: kickedBombs.map(b => ({ x: b.x, y: b.y, dx: b.dx, dy: b.dy }))
+    kickedBombs: kickedBombs.map(b => ({
+      x: b.bomb.x, y: b.bomb.y,
+      dx: b.dx, dy: b.dy,
+      moveProgress: b.moveProgress,
+      timer: b.bomb.timer,
+      remote: b.bomb.remote
+    }))
   };
   // Only include grid when it has changed (saves ~1KB per broadcast)
   if (gridDirty) {
@@ -386,7 +392,7 @@ function gameTickInner() {
                 // Kick the bomb
                 const bomb = bombs.find(b => b.x === nx && b.y === ny);
                 if (bomb && !kickedBombs.some(kb => kb.bomb === bomb)) {
-                  kickedBombs.push({ bomb, dx, dy, x: bomb.x, y: bomb.y });
+                  kickedBombs.push({ bomb, dx, dy, moveProgress: 0 });
                 }
               }
               // Can't walk into bomb tile (unless it's the one you're standing on — handled by placement)
@@ -423,20 +429,28 @@ function gameTickInner() {
     }
   });
 
-  // Update kicked bombs
+  // Update kicked bombs — move at the same speed as a base-speed player (4 tiles/sec)
+  const KICK_SPEED = 4;
   for (let i = kickedBombs.length - 1; i >= 0; i--) {
     const kb = kickedBombs[i];
-    const nx = kb.bomb.x + kb.dx;
-    const ny = kb.bomb.y + kb.dy;
+    kb.moveProgress += KICK_SPEED * dt;
 
-    if (nx < 0 || nx >= GRID_W || ny < 0 || ny >= GRID_H ||
-        grid[ny][nx] === 'W' || grid[ny][nx] === 'B' ||
-        bombs.some(b => b !== kb.bomb && b.x === nx && b.y === ny)) {
-      // Stop
-      kickedBombs.splice(i, 1);
-    } else {
-      kb.bomb.x = nx;
-      kb.bomb.y = ny;
+    if (kb.moveProgress >= 1) {
+      // Consume one full tile step
+      kb.moveProgress -= 1;
+      const nx = kb.bomb.x + kb.dx;
+      const ny = kb.bomb.y + kb.dy;
+
+      if (nx < 0 || nx >= GRID_W || ny < 0 || ny >= GRID_H ||
+          grid[ny][nx] === 'W' || grid[ny][nx] === 'B' ||
+          bombs.some(b => b !== kb.bomb && b.x === nx && b.y === ny)) {
+        // Hit a wall / another bomb — stop
+        kb.moveProgress = 0;
+        kickedBombs.splice(i, 1);
+      } else {
+        kb.bomb.x = nx;
+        kb.bomb.y = ny;
+      }
     }
   }
 
@@ -575,6 +589,47 @@ function checkPowerupPickup(playerId) {
     case 'skull': applyRandomCurse(p); break;
     case 'shield': p.hasShield = true; break;
   }
+}
+
+// Promote the first waiting player directly into the live game (called when an active player leaves mid-game)
+function promoteWaiterMidGame() {
+  if (waitingOrder.length === 0) return;
+  const wId = waitingOrder.shift();
+  const wp = waitingPlayers[wId];
+
+  // Pick a colorIndex / spawn that no current active player is using
+  const usedColorIndices = new Set(playerOrder.map(id => players[id].colorIndex));
+  let colorIndex = 0;
+  while (usedColorIndices.has(colorIndex) && colorIndex < SPAWNS.length) colorIndex++;
+  const spawn = SPAWNS[colorIndex] || SPAWNS[0];
+
+  players[wId] = {
+    name: wp.name, color: COLORS[colorIndex], colorIndex,
+    sprite: wp.sprite, deviceId: wp.deviceId, ws: wp.ws,
+    x: spawn.x, y: spawn.y, alive: true,
+    bombRange: 1, maxBombs: 1, activeBombs: 0, speed: 1,
+    hasRemote: false, hasKick: false, hasShield: false,
+    curse: null, curseTimer: 0,
+    invincibleTimer: 3, // 3 seconds of spawn protection to get their bearings
+    moveProgress: 0, moving: false, moveDir: null,
+    targetX: spawn.x, targetY: spawn.y,
+    inputQueue: [], autoBombCooldown: 0
+  };
+  playerOrder.push(wId);
+  if (!stats[wId]) stats[wId] = { wins: 0, score: 0 };
+  delete waitingPlayers[wId];
+
+  // Tell the promoted player they are now active in a live game
+  try {
+    wp.ws.send(JSON.stringify({ type: 'midgameJoin', playerId: wId, colorIndex }));
+  } catch (e) {}
+
+  // Update queue positions for remaining waiters
+  waitingOrder.forEach((qId, i) => {
+    try {
+      waitingPlayers[qId].ws.send(JSON.stringify({ type: 'queueUpdate', queuePosition: i + 1 }));
+    } catch (e) {}
+  });
 }
 
 function endRound() {
@@ -769,7 +824,6 @@ wss.on('connection', (ws) => {
 
       const nobodyLeft = playerOrder.length === 0 && waitingOrder.length === 0;
       if (nobodyLeft) {
-        // Full reset
         lobby = true;
         if (gameLoopInterval) clearInterval(gameLoopInterval);
         gameLoopInterval = null;
@@ -782,10 +836,36 @@ wss.on('connection', (ws) => {
         return;
       }
 
-      if (!lobby && playerOrder.length === 0 && !roundEndTimer) {
-        // All active players left mid-game — end round to promote waiters
-        roundEndTimer = setTimeout(endRound, 500);
+      if (!lobby) {
+        if (playerOrder.length === 0 && !roundEndTimer) {
+          // All active players gone — end round (promotes waiters)
+          roundEndTimer = setTimeout(endRound, 500);
+        } else if (waitingOrder.length > 0) {
+          // Still players in game — immediately promote first waiter into the live game
+          promoteWaiterMidGame();
+        }
         return;
+      }
+
+      // In lobby: promote first waiting player into the lobby slot
+      if (waitingOrder.length > 0) {
+        const wId = waitingOrder.shift();
+        const wp = waitingPlayers[wId];
+        const colorIndex = playerOrder.length;
+        players[wId] = {
+          name: wp.name, color: COLORS[colorIndex], colorIndex,
+          sprite: wp.sprite, deviceId: wp.deviceId, ws: wp.ws,
+          x: 0, y: 0, alive: true,
+          bombRange: 1, maxBombs: 1, activeBombs: 0, speed: 1,
+          hasRemote: false, hasKick: false, hasShield: false,
+          curse: null, curseTimer: 0, invincibleTimer: 0,
+          moveProgress: 0, moving: false, moveDir: null, targetX: 0, targetY: 0,
+          inputQueue: [], autoBombCooldown: 0
+        };
+        playerOrder.push(wId);
+        if (!stats[wId]) stats[wId] = { wins: 0, score: 0 };
+        delete waitingPlayers[wId];
+        try { wp.ws.send(JSON.stringify({ type: 'joined', playerId: wId, colorIndex })); } catch (e) {}
       }
 
       broadcastLobbyState();

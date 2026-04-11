@@ -237,6 +237,23 @@ function handleMessage(msg) {
       showRoundEnd(msg);
       break;
 
+    case 'midgameJoin':
+      // We were spectating and got promoted into the live game mid-round
+      myId = msg.playerId;
+      myColorIndex = msg.colorIndex;
+      isSpectating = false;
+      inLobby = false;
+      gameDiv.classList.remove('spectating');
+      document.getElementById('spectator-banner').style.display = 'none';
+      gameDiv.style.display = 'grid';
+      startTimer();
+      break;
+
+    case 'queueUpdate':
+      // Still waiting — queue position changed (someone ahead of us left or got promoted)
+      updateSpectatorBanner(msg.queuePosition);
+      break;
+
     case 'error':
       alert(msg.message);
       // Re-enable join button if the error happened before joining
@@ -464,6 +481,7 @@ window.addEventListener('orientationchange', () => {
 // --- Client-side interpolation state ---
 // Tracks smooth render positions for each player, updated every animation frame
 const renderPos = {}; // playerId → { rx, ry }
+const kickedBombRenderPos = {}; // "x,y,dx,dy" → current client-side moveProgress
 let lastRenderTime = null;
 
 function updateRenderPositions(now) {
@@ -471,6 +489,7 @@ function updateRenderPositions(now) {
   const dt = lastRenderTime ? (now - lastRenderTime) / 1000 : 0;
   lastRenderTime = now;
 
+  // Interpolate player positions
   gameState.players.forEach(p => {
     if (!renderPos[p.id]) {
       renderPos[p.id] = { rx: p.x, ry: p.y };
@@ -491,6 +510,24 @@ function updateRenderPositions(now) {
       r.ry = p.y;
     }
   });
+
+  // Interpolate kicked bomb positions — same speed as base player (4 tiles/sec)
+  const KICK_SPEED = 4;
+  const activeKickedKeys = new Set();
+  (gameState.kickedBombs || []).forEach(kb => {
+    const key = `${kb.x},${kb.y},${kb.dx},${kb.dy}`;
+    activeKickedKeys.add(key);
+    if (!(key in kickedBombRenderPos)) {
+      // Seed from server's authoritative progress
+      kickedBombRenderPos[key] = kb.moveProgress;
+    }
+    // Advance client-side progress, but never exceed 1 (we don't know next tile yet)
+    kickedBombRenderPos[key] = Math.min(kickedBombRenderPos[key] + KICK_SPEED * dt, 0.999);
+  });
+  // Clean up entries for kicked bombs that are no longer active
+  for (const key of Object.keys(kickedBombRenderPos)) {
+    if (!activeKickedKeys.has(key)) delete kickedBombRenderPos[key];
+  }
 }
 
 // --- Rendering ---
@@ -560,9 +597,22 @@ function render(now) {
     drawPowerup(pu.x * s, pu.y * s, s, pu.kind);
   });
 
-  // Draw bombs
+  // Draw bombs — skip those being kicked (they're drawn separately at interpolated positions)
+  const kickedBombPositions = new Set(
+    (gameState.kickedBombs || []).map(kb => `${kb.x},${kb.y}`)
+  );
   gameState.bombs.forEach(b => {
+    if (kickedBombPositions.has(`${b.x},${b.y}`)) return;
     drawBomb(b.x * s, b.y * s, s, b.timer, b.remote);
+  });
+
+  // Draw kicked bombs at their smooth interpolated positions
+  (gameState.kickedBombs || []).forEach(kb => {
+    const key = `${kb.x},${kb.y},${kb.dx},${kb.dy}`;
+    const prog = kickedBombRenderPos[key] ?? kb.moveProgress;
+    const rx = kb.x + kb.dx * prog;
+    const ry = kb.y + kb.dy * prog;
+    drawBomb(rx * s, ry * s, s, kb.timer, kb.remote);
   });
 
   // Draw explosions
@@ -919,6 +969,11 @@ dropRate.addEventListener('input', () => {
 
 startBtn.addEventListener('click', () => {
   send({ type: 'ready' });
+});
+
+// Leave Lobby — disconnects and returns to the join screen
+document.getElementById('leaveLobbyBtn').addEventListener('click', () => {
+  window.location.reload();
 });
 
 // Start render loop
