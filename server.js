@@ -5,7 +5,7 @@ const path = require('path');
 const { WebSocketServer } = require('ws');
 const maps = require('./maps');
 
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 const TICK_RATE = 60;
 const TICK_MS = 1000 / TICK_RATE;
 const GRID_W = 15;
