@@ -256,12 +256,17 @@ function playerThumb(p) {
 }
 
 function updateLobbyUI(data) {
-  // Active player list
+  // Active player list — show checkmark for ready players
   playerList.innerHTML = data.players.map(p =>
-    `<div class="player-tag">${playerThumb(p)}<span>${escapeHtml(p.name)}</span><span style="color:#ffd700;">${p.wins}W</span></div>`
+    `<div class="player-tag">
+      ${playerThumb(p)}
+      <span>${escapeHtml(p.name)}</span>
+      <span class="ready-check${p.ready ? ' ready-check-on' : ''}">✓</span>
+      <span style="color:#ffd700;">${p.wins}W</span>
+    </div>`
   ).join('');
 
-  // Waiting queue (shown below player list if anyone is waiting)
+  // Waiting queue
   const waitingSection = document.getElementById('waiting-queue');
   if (data.waiting && data.waiting.length > 0) {
     waitingSection.style.display = 'block';
@@ -286,11 +291,33 @@ function updateLobbyUI(data) {
   dropRate.value = data.itemDropRate;
   dropRateVal.textContent = data.itemDropRate + '%';
 
-  // Start button
-  startBtn.disabled = data.players.length < 2;
-  startBtn.textContent = data.players.length < 2
-    ? 'Start Game (need 2+ players)'
-    : 'Start Game';
+  // Ready button state
+  const me = data.players.find(p => p.id === myId);
+  const iAmReady = me && me.ready;
+  const readyCount = data.players.filter(p => p.ready).length;
+  const total = data.players.length;
+
+  if (total < 2) {
+    startBtn.disabled = true;
+    startBtn.textContent = 'Ready Up (need 2+ players)';
+    startBtn.classList.remove('btn-ready');
+  } else {
+    startBtn.disabled = false;
+    startBtn.textContent = iAmReady ? '✓ Ready!' : 'Ready Up';
+    startBtn.classList.toggle('btn-ready', iAmReady);
+  }
+
+  // Ready count hint
+  let hint = document.getElementById('ready-hint');
+  if (!hint) {
+    hint = document.createElement('p');
+    hint.id = 'ready-hint';
+    hint.className = 'waiting-label';
+    startBtn.insertAdjacentElement('beforebegin', hint);
+  }
+  hint.textContent = total >= 2
+    ? `${readyCount} / ${total} ready`
+    : '';
 }
 
 // --- Died overlay ---
@@ -891,7 +918,7 @@ dropRate.addEventListener('input', () => {
 });
 
 startBtn.addEventListener('click', () => {
-  send({ type: 'startGame' });
+  send({ type: 'ready' });
 });
 
 // Start render loop

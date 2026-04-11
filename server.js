@@ -64,6 +64,9 @@ let deviceIdMap = {};
 let waitingPlayers = {}; // id → { name, sprite, deviceId, ws }
 let waitingOrder = [];
 
+// Ready-up tracking — game starts when all lobby players are ready
+let readySet = new Set();
+
 // --- HTTP Server ---
 const mimeTypes = {
   '.html': 'text/html',
@@ -127,7 +130,8 @@ function broadcastLobbyState() {
   const playerList = playerOrder.map(id => ({
     id, name: players[id].name, color: players[id].color, colorName: COLOR_NAMES[players[id].colorIndex],
     sprite: players[id].sprite || null,
-    wins: stats[id] ? stats[id].wins : 0, score: stats[id] ? stats[id].score : 0
+    wins: stats[id] ? stats[id].wins : 0, score: stats[id] ? stats[id].score : 0,
+    ready: readySet.has(id)
   }));
   const waitingList = waitingOrder.map(id => ({
     id, name: waitingPlayers[id].name, sprite: waitingPlayers[id].sprite || null
@@ -238,6 +242,7 @@ function applyRandomCurse(player) {
 
 // --- Start Game ---
 function startGame() {
+  readySet.clear();
   lobby = false;
   grid = generateGrid(selectedMap);
   gridDirty = true;
@@ -709,10 +714,20 @@ wss.on('connection', (ws) => {
       }
     }
 
-    if (msg.type === 'startGame') {
-      if (lobby && playerOrder.length >= 2) {
-        startGame();
+    if (msg.type === 'ready') {
+      if (!lobby || !playerId || !players[playerId]) return;
+      // Toggle ready state
+      if (readySet.has(playerId)) {
+        readySet.delete(playerId);
+      } else {
+        readySet.add(playerId);
       }
+      // Auto-start when all players are ready (min 2)
+      if (playerOrder.length >= 2 && playerOrder.every(id => readySet.has(id))) {
+        startGame();
+        return;
+      }
+      broadcastLobbyState();
     }
 
     // In-game inputs
@@ -746,6 +761,7 @@ wss.on('connection', (ws) => {
     if (players[playerId]) {
       const deviceId = players[playerId].deviceId;
       if (deviceId) delete deviceIdMap[deviceId];
+      readySet.delete(playerId);
       players[playerId].alive = false;
       const idx = playerOrder.indexOf(playerId);
       if (idx !== -1) playerOrder.splice(idx, 1);
@@ -761,6 +777,7 @@ wss.on('connection', (ws) => {
         deviceIdMap = {};
         waitingPlayers = {};
         waitingOrder = [];
+        readySet.clear();
         roundEndTimer = null;
         return;
       }

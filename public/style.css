@@ -93,7 +93,7 @@ button:active { transform: scale(0.95); }
 }
 
 #startBtn {
-  background: #28a745;
+  background: #e67e22;
   color: #fff;
   font-size: 1.2rem;
   padding: 12px 30px;
@@ -104,6 +104,26 @@ button:active { transform: scale(0.95); }
 #startBtn:disabled {
   background: #555;
   cursor: not-allowed;
+}
+
+#startBtn.btn-ready {
+  background: #27ae60;
+}
+
+/* Ready checkmark beside player names */
+.ready-check {
+  font-size: 1rem;
+  font-weight: 700;
+  color: transparent; /* hidden when not ready */
+  min-width: 16px;
+}
+.ready-check-on {
+  color: #2ecc71;
+}
+
+#ready-hint {
+  text-align: center;
+  margin-bottom: 6px;
 }
 
 #playerList {
