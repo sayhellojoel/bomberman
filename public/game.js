@@ -211,6 +211,7 @@ function handleMessage(msg) {
       lobbyDiv.style.display = 'none';
       gameDiv.style.display = 'grid';
       roundEndDiv.style.display = 'none';
+      hideDiedOverlay();
       resizeCanvas();
       if (isSpectating) {
         gameDiv.classList.add('spectating');
@@ -220,12 +221,17 @@ function handleMessage(msg) {
       }
       break;
 
-    case 'gameState':
+    case 'gameState': {
       // Grid is only sent when it changes — preserve the last known grid otherwise
       if (!msg.grid && gameState) msg.grid = gameState.grid;
+      // Detect local player death
+      const prevMe = gameState && myId ? gameState.players.find(p => p.id === myId) : null;
+      const nextMe = myId ? msg.players.find(p => p.id === myId) : null;
+      if (prevMe && prevMe.alive && nextMe && !nextMe.alive) showDiedOverlay();
       gameState = msg;
       updateScoreboard(msg.players);
       break;
+    }
 
     case 'roundEnd':
       showRoundEnd(msg);
@@ -287,6 +293,23 @@ function updateLobbyUI(data) {
     : 'Start Game';
 }
 
+// --- Died overlay ---
+let diedOverlayTimeout = null;
+function showDiedOverlay() {
+  const el = document.getElementById('died-overlay');
+  el.style.display = 'flex';
+  clearTimeout(diedOverlayTimeout);
+  // Fade out after 2.5s — round end will also hide it
+  diedOverlayTimeout = setTimeout(() => { el.style.opacity = '0'; }, 2000);
+  setTimeout(() => { el.style.display = 'none'; el.style.opacity = '1'; }, 2800);
+}
+function hideDiedOverlay() {
+  clearTimeout(diedOverlayTimeout);
+  const el = document.getElementById('died-overlay');
+  el.style.display = 'none';
+  el.style.opacity = '1';
+}
+
 function updateSpectatorBanner(queuePosition) {
   const banner = document.getElementById('spectator-banner');
   banner.style.display = 'block';
@@ -344,6 +367,7 @@ function updateScoreboard(players) {
 
 // --- Round End ---
 function showRoundEnd(msg) {
+  hideDiedOverlay();
   roundEndDiv.style.display = 'flex';
   if (msg.draw) {
     roundEndText.textContent = 'DRAW!';
@@ -355,18 +379,17 @@ function showRoundEnd(msg) {
 }
 
 // --- Quit Button ---
-quitBtn.addEventListener('click', () => {
-  quitModal.style.display = 'flex';
-});
+quitBtn.addEventListener('click', () => { quitModal.style.display = 'flex'; });
+quitBtn.addEventListener('touchend', (e) => { e.preventDefault(); quitModal.style.display = 'flex'; }, { passive: false });
 
-document.getElementById('quitCancel').addEventListener('click', () => {
-  quitModal.style.display = 'none';
-});
+function doCancel() { quitModal.style.display = 'none'; }
+function doQuit() { window.location.reload(); }
 
-document.getElementById('quitConfirm').addEventListener('click', () => {
-  // Reload the page — disconnects WS and returns to lobby
-  window.location.reload();
-});
+document.getElementById('quitCancel').addEventListener('click', doCancel);
+document.getElementById('quitCancel').addEventListener('touchend', (e) => { e.preventDefault(); doCancel(); }, { passive: false });
+
+document.getElementById('quitConfirm').addEventListener('click', doQuit);
+document.getElementById('quitConfirm').addEventListener('touchend', (e) => { e.preventDefault(); doQuit(); }, { passive: false });
 
 // --- Canvas Resize ---
 function resizeCanvas() {
