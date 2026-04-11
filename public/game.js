@@ -452,10 +452,26 @@ function drawPlayer(px, py, s, p) {
 
   if (img && img.complete && img.naturalWidth > 0) {
     // --- Sprite image rendering ---
-    // Draw with pixelated scaling; leave a tiny margin so shadow shows at bottom
-    const margin = s * 0.05;
-    ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(img, px + margin, py + margin, s - margin * 2, s - margin * 2);
+    // Use high-quality smoothing (these are photos, not pixel art)
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+
+    // Maintain aspect ratio — fit inside tile, centered
+    const margin = s * 0.04;
+    const maxW = s - margin * 2;
+    const maxH = s - margin * 2;
+    const aspect = img.naturalWidth / img.naturalHeight;
+    let dw, dh;
+    if (aspect >= 1) {
+      dw = maxW;
+      dh = maxW / aspect;
+    } else {
+      dh = maxH;
+      dw = maxH * aspect;
+    }
+    const dx = px + margin + (maxW - dw) / 2;
+    const dy = py + margin + (maxH - dh) / 2;
+    ctx.drawImage(img, dx, dy, dw, dh);
 
     // Shield: cyan circle around sprite
     if (p.hasShield) {
@@ -469,7 +485,7 @@ function drawPlayer(px, py, s, p) {
     // Curse: purple tint overlay
     if (p.curse) {
       ctx.fillStyle = 'rgba(128, 0, 128, 0.28)';
-      ctx.fillRect(px + margin, py + margin, s - margin * 2, s - margin * 2);
+      ctx.fillRect(dx, dy, dw, dh);
     }
 
   } else {
