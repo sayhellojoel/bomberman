@@ -740,56 +740,25 @@ function startMoveRepeat(key) {
   }, 120);
 }
 
-// Mobile controls — unified zone handler on the whole dpad container
-// Direction is computed from touch position relative to center, not per-button hit detection.
-// This makes edges, glancing touches, and finger slides all work naturally.
-const dpadEl = document.getElementById('dpad');
-let dpadInterval = null;
-let dpadCurrentDir = null;
+// Mobile controls
+document.querySelectorAll('.dpad-btn').forEach(btn => {
+  let interval = null;
+  const dir = btn.dataset.dir;
 
-function dpadDirFromTouch(touch) {
-  const rect = dpadEl.getBoundingClientRect();
-  const cx = rect.left + rect.width / 2;
-  const cy = rect.top + rect.height / 2;
-  const dx = touch.clientX - cx;
-  const dy = touch.clientY - cy;
-  if (Math.abs(dx) < 6 && Math.abs(dy) < 6) return null; // dead zone at center
-  return Math.abs(dx) > Math.abs(dy)
-    ? (dx > 0 ? 'right' : 'left')
-    : (dy > 0 ? 'down' : 'up');
-}
-
-function dpadActivate(dir) {
-  if (dir === dpadCurrentDir) return;
-  dpadCurrentDir = dir;
-  clearInterval(dpadInterval);
-  // Highlight active button
-  document.querySelectorAll('.dpad-btn').forEach(b =>
-    b.classList.toggle('dpad-active', b.dataset.dir === dir));
-  if (dir) {
+  const start = (e) => {
+    e.preventDefault();
     send({ type: 'input', action: 'move', dir });
-    dpadInterval = setInterval(() => send({ type: 'input', action: 'move', dir }), 120);
-  } else {
-    dpadInterval = null;
-  }
-}
+    interval = setInterval(() => send({ type: 'input', action: 'move', dir }), 120);
+  };
+  const stop = (e) => {
+    e.preventDefault();
+    clearInterval(interval);
+  };
 
-function dpadStop() {
-  dpadActivate(null);
-}
-
-dpadEl.addEventListener('touchstart', (e) => {
-  e.preventDefault();
-  dpadActivate(dpadDirFromTouch(e.touches[0]));
-}, { passive: false });
-
-dpadEl.addEventListener('touchmove', (e) => {
-  e.preventDefault();
-  dpadActivate(dpadDirFromTouch(e.touches[0]));
-}, { passive: false });
-
-dpadEl.addEventListener('touchend', (e) => { e.preventDefault(); dpadStop(); }, { passive: false });
-dpadEl.addEventListener('touchcancel', (e) => { e.preventDefault(); dpadStop(); }, { passive: false });
+  btn.addEventListener('touchstart', start, { passive: false });
+  btn.addEventListener('touchend', stop, { passive: false });
+  btn.addEventListener('touchcancel', stop, { passive: false });
+});
 
 document.getElementById('bombBtn').addEventListener('touchstart', (e) => {
   e.preventDefault();
