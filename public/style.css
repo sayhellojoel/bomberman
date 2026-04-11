@@ -244,7 +244,37 @@ button:active { transform: scale(0.95); }
   min-width: 0;
   min-height: 0;
   overflow: hidden;
+  position: relative;
 }
+
+/* Spectator banner — floats above canvas */
+#spectator-banner {
+  position: absolute;
+  top: 44px; /* clear the game header */
+  left: 0; right: 0;
+  background: rgba(0, 0, 0, 0.72);
+  color: #ffd700;
+  font-size: 0.95rem;
+  font-weight: 600;
+  text-align: center;
+  padding: 6px 12px;
+  z-index: 20;
+  pointer-events: none;
+}
+
+/* Hide controls for spectators */
+#game.spectating #game-ctrl-dpad,
+#game.spectating #game-ctrl-bomb { display: none !important; }
+
+/* Waiting queue in lobby */
+.waiting-label {
+  font-size: 0.8rem;
+  color: #aaa;
+  margin: 6px 0 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.waiting-tag { opacity: 0.7; }
 
 #game-ctrl-dpad,
 #game-ctrl-bomb {

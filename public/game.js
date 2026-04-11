@@ -8,6 +8,7 @@ let ws = null;
 let myId = null;
 let myColorIndex = 0;
 let inLobby = true;
+let isSpectating = false;
 let gameState = null;
 let lastRenderState = null;
 
@@ -163,20 +164,46 @@ function send(msg) {
 // --- Message Handlers ---
 function handleMessage(msg) {
   switch (msg.type) {
+    case 'spectate':
+      myId = msg.playerId;
+      isSpectating = true;
+      inLobby = false;
+      joinSection.style.display = 'none';
+      lobbyDiv.style.display = 'none';
+      gameDiv.style.display = 'grid';
+      gameDiv.classList.add('spectating');
+      roundEndDiv.style.display = 'none';
+      resizeCanvas();
+      updateSpectatorBanner(msg.queuePosition);
+      break;
+
     case 'joined':
       myId = msg.playerId;
       myColorIndex = msg.colorIndex;
+      isSpectating = false;
+      gameDiv.classList.remove('spectating');
+      document.getElementById('spectator-banner').style.display = 'none';
+      document.querySelector('.lobby-options').style.display = '';
+      startBtn.style.display = '';
       joinSection.style.display = 'none';
       lobbyInfo.style.display = 'block';
       break;
 
     case 'lobby':
       inLobby = true;
-      lobbyDiv.style.display = 'block';
-      gameDiv.style.display = 'none';
-      roundEndDiv.style.display = 'none';
       stopTimer();
-      updateLobbyUI(msg);
+      if (isSpectating) {
+        // Still in queue — show waiting view instead of active lobby
+        gameDiv.style.display = 'none';
+        lobbyDiv.style.display = 'block';
+        roundEndDiv.style.display = 'none';
+        updateSpectatorLobbyUI(msg);
+      } else {
+        lobbyDiv.style.display = 'block';
+        gameDiv.style.display = 'none';
+        roundEndDiv.style.display = 'none';
+        updateLobbyUI(msg);
+      }
       break;
 
     case 'gameStart':
@@ -185,7 +212,12 @@ function handleMessage(msg) {
       gameDiv.style.display = 'grid';
       roundEndDiv.style.display = 'none';
       resizeCanvas();
-      startTimer();
+      if (isSpectating) {
+        gameDiv.classList.add('spectating');
+      } else {
+        gameDiv.classList.remove('spectating');
+        startTimer();
+      }
       break;
 
     case 'gameState':
@@ -211,18 +243,30 @@ function handleMessage(msg) {
 }
 
 // --- Lobby UI ---
+function playerThumb(p) {
+  return p.sprite
+    ? `<img class="player-sprite-thumb" src="8%20bit%20originals/${encodeURIComponent(p.sprite)}" alt="${escapeHtml(p.name)}">`
+    : `<div class="player-color" style="background:${p.color || '#888'}"></div>`;
+}
+
 function updateLobbyUI(data) {
-  // Player list
-  playerList.innerHTML = data.players.map(p => {
-    const thumb = p.sprite
-      ? `<img class="player-sprite-thumb" src="8%20bit%20originals/${encodeURIComponent(p.sprite)}" alt="${escapeHtml(p.sprite)}">`
-      : `<div class="player-color" style="background:${p.color}"></div>`;
-    return `<div class="player-tag">
-      ${thumb}
-      <span>${escapeHtml(p.name)}</span>
-      <span style="color:#ffd700;">${p.wins}W</span>
-    </div>`;
-  }).join('');
+  // Active player list
+  playerList.innerHTML = data.players.map(p =>
+    `<div class="player-tag">${playerThumb(p)}<span>${escapeHtml(p.name)}</span><span style="color:#ffd700;">${p.wins}W</span></div>`
+  ).join('');
+
+  // Waiting queue (shown below player list if anyone is waiting)
+  const waitingSection = document.getElementById('waiting-queue');
+  if (data.waiting && data.waiting.length > 0) {
+    waitingSection.style.display = 'block';
+    waitingSection.innerHTML = `<p class="waiting-label">Up next:</p>` +
+      data.waiting.map((p, i) =>
+        `<div class="player-tag waiting-tag">${playerThumb(p)}<span>${escapeHtml(p.name)}</span><span style="color:#aaa;">#${i + 1}</span></div>`
+      ).join('');
+  } else {
+    waitingSection.style.display = 'none';
+    waitingSection.innerHTML = '';
+  }
 
   // Map select
   if (mapSelect.children.length !== data.maps.length) {
@@ -241,6 +285,29 @@ function updateLobbyUI(data) {
   startBtn.textContent = data.players.length < 2
     ? 'Start Game (need 2+ players)'
     : 'Start Game';
+}
+
+function updateSpectatorBanner(queuePosition) {
+  const banner = document.getElementById('spectator-banner');
+  banner.style.display = 'block';
+  banner.textContent = `👁 Watching • You're #${queuePosition} in queue`;
+}
+
+function updateSpectatorLobbyUI(data) {
+  // Spectator sees a stripped-down waiting screen
+  joinSection.style.display = 'none';
+  lobbyInfo.style.display = 'block';
+  const myPos = data.waiting ? data.waiting.findIndex(p => p.id === myId) + 1 : 0;
+  playerList.innerHTML =
+    `<p class="waiting-label" style="color:#ffd700;margin-bottom:8px;">You're #${myPos} in queue — you'll join next round!</p>` +
+    `<p class="waiting-label">Currently playing:</p>` +
+    data.players.map(p =>
+      `<div class="player-tag">${playerThumb(p)}<span>${escapeHtml(p.name)}</span><span style="color:#ffd700;">${p.wins}W</span></div>`
+    ).join('');
+
+  // Hide controls spectators shouldn't see
+  document.querySelector('.lobby-options').style.display = 'none';
+  startBtn.style.display = 'none';
 }
 
 function escapeHtml(str) {

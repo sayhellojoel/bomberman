@@ -60,6 +60,10 @@ let stats = {};
 // Maps deviceId → playerId to prevent same device joining twice
 let deviceIdMap = {};
 
+// Players waiting to join the next round (joined mid-game)
+let waitingPlayers = {}; // id → { name, sprite, deviceId, ws }
+let waitingOrder = [];
+
 // --- HTTP Server ---
 const mimeTypes = {
   '.html': 'text/html',
@@ -125,12 +129,25 @@ function broadcastLobbyState() {
     sprite: players[id].sprite || null,
     wins: stats[id] ? stats[id].wins : 0, score: stats[id] ? stats[id].score : 0
   }));
-  broadcast({
+  const waitingList = waitingOrder.map(id => ({
+    id, name: waitingPlayers[id].name, sprite: waitingPlayers[id].sprite || null
+  }));
+  const msg = JSON.stringify({
     type: 'lobby',
     players: playerList,
+    waiting: waitingList,
     maps: maps.map((m, i) => ({ index: i, name: m.name, description: m.description })),
     selectedMap,
     itemDropRate: Math.round(itemDropRate * 100)
+  });
+  // Send lobby state to lobby players and waiting spectators — NOT to active game players
+  wss.clients.forEach(client => {
+    if (client.readyState !== 1) return;
+    // Find which player this WS belongs to
+    const activeId = playerOrder.find(id => players[id].ws === client);
+    const waitingId = waitingOrder.find(id => waitingPlayers[id].ws === client);
+    if (activeId && !lobby) return; // don't interrupt active game players
+    try { client.send(msg); } catch (e) {}
   });
 }
 
@@ -578,10 +595,33 @@ function endRound() {
     draw
   });
 
-  // Return to lobby after 4 seconds
+  // Return to lobby after 4 seconds, promoting waiting players
   setTimeout(() => {
     lobby = true;
     roundEndTimer = null;
+
+    // Promote waiting players into empty active slots (up to 4 total)
+    while (waitingOrder.length > 0 && playerOrder.length < 4) {
+      const wId = waitingOrder.shift();
+      const wp = waitingPlayers[wId];
+      const colorIndex = playerOrder.length;
+      players[wId] = {
+        name: wp.name, color: COLORS[colorIndex], colorIndex,
+        sprite: wp.sprite, deviceId: wp.deviceId, ws: wp.ws,
+        x: 0, y: 0, alive: true,
+        bombRange: 1, maxBombs: 1, activeBombs: 0, speed: 1,
+        hasRemote: false, hasKick: false, hasShield: false,
+        curse: null, curseTimer: 0, invincibleTimer: 0,
+        moveProgress: 0, moving: false, moveDir: null, targetX: 0, targetY: 0,
+        inputQueue: [], autoBombCooldown: 0
+      };
+      playerOrder.push(wId);
+      if (!stats[wId]) stats[wId] = { wins: 0, score: 0 };
+      delete waitingPlayers[wId];
+      // Tell the promoted player they are now active
+      try { wp.ws.send(JSON.stringify({ type: 'joined', playerId: wId, colorIndex })); } catch (e) {}
+    }
+
     broadcastLobbyState();
   }, 4000);
 }
@@ -595,43 +635,52 @@ wss.on('connection', (ws) => {
     try { msg = JSON.parse(data); } catch { return; }
 
     if (msg.type === 'join') {
-      // Prevent same device joining twice
+      // Prevent same device joining twice (check both active and waiting)
       if (msg.deviceId && deviceIdMap[msg.deviceId]) {
         const existingId = deviceIdMap[msg.deviceId];
-        const existingPlayer = players[existingId];
+        const existingPlayer = players[existingId] || waitingPlayers[existingId];
         const existingWsAlive = existingPlayer && existingPlayer.ws && existingPlayer.ws.readyState === 1;
         if (existingWsAlive) {
-          // Still connected — reject the duplicate join
           ws.send(JSON.stringify({ type: 'error', message: 'This device is already in the game.' }));
           return;
         } else {
-          // Stale entry (e.g. Chrome tab closed, PWA opened same device) — clean up and allow rejoin
           delete deviceIdMap[msg.deviceId];
-          if (existingId && players[existingId]) {
-            const idx = playerOrder.indexOf(existingId);
-            if (idx !== -1) playerOrder.splice(idx, 1);
+          if (players[existingId]) {
+            playerOrder.splice(playerOrder.indexOf(existingId), 1);
             delete players[existingId];
+          } else if (waitingPlayers[existingId]) {
+            waitingOrder.splice(waitingOrder.indexOf(existingId), 1);
+            delete waitingPlayers[existingId];
           }
         }
       }
-      // Assign player slot
+
+      const validSprites = getAvailableSprites();
+      const sprite = validSprites.includes(msg.sprite) ? msg.sprite : (validSprites[0] || 'Adam.png');
+      const name = msg.name || 'Player';
+      playerId = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+      if (msg.deviceId) deviceIdMap[msg.deviceId] = playerId;
+
+      if (!lobby) {
+        // Game in progress — add to waiting queue as a spectator
+        waitingPlayers[playerId] = { name, sprite, deviceId: msg.deviceId || null, ws };
+        waitingOrder.push(playerId);
+        if (!stats[playerId]) stats[playerId] = { wins: 0, score: 0 };
+        const queuePosition = waitingOrder.length;
+        ws.send(JSON.stringify({ type: 'spectate', playerId, queuePosition }));
+        broadcastLobbyState(); // notify everyone of the new spectator in queue
+        return;
+      }
+
+      // Normal lobby join
       if (playerOrder.length >= 4) {
         ws.send(JSON.stringify({ type: 'error', message: 'Game is full (max 4 players)' }));
         return;
       }
-      playerId = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
       const colorIndex = playerOrder.length;
-      // Validate sprite is one of the actual files in the sprites folder
-      const validSprites = getAvailableSprites();
-      const sprite = validSprites.includes(msg.sprite) ? msg.sprite : (validSprites[0] || 'Adam.png');
-
       players[playerId] = {
-        name: msg.name || 'Player',
-        color: COLORS[colorIndex],
-        colorIndex,
-        sprite,
-        deviceId: msg.deviceId || null,
-        ws,
+        name, color: COLORS[colorIndex], colorIndex, sprite,
+        deviceId: msg.deviceId || null, ws,
         x: 0, y: 0, alive: true,
         bombRange: 1, maxBombs: 1, activeBombs: 0, speed: 1,
         hasRemote: false, hasKick: false, hasShield: false,
@@ -641,8 +690,6 @@ wss.on('connection', (ws) => {
       };
       playerOrder.push(playerId);
       if (!stats[playerId]) stats[playerId] = { wins: 0, score: 0 };
-      if (msg.deviceId) deviceIdMap[msg.deviceId] = playerId;
-
       ws.send(JSON.stringify({ type: 'joined', playerId, colorIndex }));
       broadcastLobbyState();
     }
@@ -684,27 +731,47 @@ wss.on('connection', (ws) => {
   });
 
   ws.on('close', () => {
-    if (playerId && players[playerId]) {
-      // Free up the device ID slot
+    if (!playerId) return;
+
+    if (waitingPlayers[playerId]) {
+      // Waiting spectator disconnected
+      const deviceId = waitingPlayers[playerId].deviceId;
+      if (deviceId) delete deviceIdMap[deviceId];
+      waitingOrder.splice(waitingOrder.indexOf(playerId), 1);
+      delete waitingPlayers[playerId];
+      broadcastLobbyState();
+      return;
+    }
+
+    if (players[playerId]) {
       const deviceId = players[playerId].deviceId;
       if (deviceId) delete deviceIdMap[deviceId];
-
       players[playerId].alive = false;
       const idx = playerOrder.indexOf(playerId);
       if (idx !== -1) playerOrder.splice(idx, 1);
       delete players[playerId];
 
-      if (playerOrder.length === 0) {
-        // Reset everything
+      const nobodyLeft = playerOrder.length === 0 && waitingOrder.length === 0;
+      if (nobodyLeft) {
+        // Full reset
         lobby = true;
         if (gameLoopInterval) clearInterval(gameLoopInterval);
         gameLoopInterval = null;
         stats = {};
         deviceIdMap = {};
+        waitingPlayers = {};
+        waitingOrder = [];
         roundEndTimer = null;
+        return;
       }
 
-      if (lobby) broadcastLobbyState();
+      if (!lobby && playerOrder.length === 0 && !roundEndTimer) {
+        // All active players left mid-game — end round to promote waiters
+        roundEndTimer = setTimeout(endRound, 500);
+        return;
+      }
+
+      broadcastLobbyState();
     }
   });
 });
