@@ -67,9 +67,29 @@ const mimeTypes = {
   '.ico': 'image/x-icon'
 };
 
+const SPRITES_DIR = path.join(__dirname, 'public', '8 bit originals');
+const IMAGE_EXTS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp']);
+
+function getAvailableSprites() {
+  try {
+    return fs.readdirSync(SPRITES_DIR).filter(f => IMAGE_EXTS.has(path.extname(f).toLowerCase()));
+  } catch (e) {
+    return [];
+  }
+}
+
 const server = http.createServer((req, res) => {
   // Decode URL so paths with spaces (e.g. "8 bit originals") resolve correctly
   const decodedUrl = decodeURIComponent(req.url.split('?')[0]);
+
+  // API: list available sprites
+  if (decodedUrl === '/api/sprites') {
+    const sprites = getAvailableSprites();
+    res.writeHead(200, { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' });
+    res.end(JSON.stringify(sprites));
+    return;
+  }
+
   let filePath = path.join(__dirname, 'public', decodedUrl === '/' ? 'index.html' : decodedUrl);
   const ext = path.extname(filePath);
   const contentType = mimeTypes[ext] || 'application/octet-stream';
@@ -552,8 +572,22 @@ wss.on('connection', (ws) => {
     if (msg.type === 'join') {
       // Prevent same device joining twice
       if (msg.deviceId && deviceIdMap[msg.deviceId]) {
-        ws.send(JSON.stringify({ type: 'error', message: 'This device is already in the game.' }));
-        return;
+        const existingId = deviceIdMap[msg.deviceId];
+        const existingPlayer = players[existingId];
+        const existingWsAlive = existingPlayer && existingPlayer.ws && existingPlayer.ws.readyState === 1;
+        if (existingWsAlive) {
+          // Still connected — reject the duplicate join
+          ws.send(JSON.stringify({ type: 'error', message: 'This device is already in the game.' }));
+          return;
+        } else {
+          // Stale entry (e.g. Chrome tab closed, PWA opened same device) — clean up and allow rejoin
+          delete deviceIdMap[msg.deviceId];
+          if (existingId && players[existingId]) {
+            const idx = playerOrder.indexOf(existingId);
+            if (idx !== -1) playerOrder.splice(idx, 1);
+            delete players[existingId];
+          }
+        }
       }
       // Assign player slot
       if (playerOrder.length >= 4) {
@@ -562,9 +596,9 @@ wss.on('connection', (ws) => {
       }
       playerId = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
       const colorIndex = playerOrder.length;
-      // Validate sprite is one of the known filenames
-      const VALID_SPRITES = ['Adam.png', 'Dan.png', 'Jer.png', 'Joel.png', 'Joel2.png'];
-      const sprite = VALID_SPRITES.includes(msg.sprite) ? msg.sprite : 'Adam.png';
+      // Validate sprite is one of the actual files in the sprites folder
+      const validSprites = getAvailableSprites();
+      const sprite = validSprites.includes(msg.sprite) ? msg.sprite : (validSprites[0] || 'Adam.png');
 
       players[playerId] = {
         name: msg.name || 'Player',

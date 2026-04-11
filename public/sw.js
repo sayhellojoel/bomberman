@@ -1,5 +1,5 @@
 // sw.js — Basic service worker for PWA installability
-const CACHE_NAME = 'bomberman-v1';
+const CACHE_NAME = 'bomberman-v2';
 const ASSETS = ['/', '/index.html', '/game.js', '/style.css', '/manifest.json'];
 
 self.addEventListener('install', (e) => {

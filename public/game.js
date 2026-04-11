@@ -71,32 +71,57 @@ function updateTimer() {
 }
 
 // --- Sprite Images ---
-const SPRITES = ['Adam.png', 'Dan.png', 'Jer.png', 'Joel.png', 'Joel2.png'];
 const spriteImages = {};
+let selectedSprite = null;
 
-SPRITES.forEach(filename => {
-  const img = new Image();
-  img.src = `8%20bit%20originals/${encodeURIComponent(filename)}`;
-  spriteImages[filename] = img;
-});
+function buildSpritePicker(sprites) {
+  const picker = document.getElementById('sprite-picker');
+  picker.innerHTML = '';
+  sprites.forEach((filename, i) => {
+    // Preload image
+    const img = new Image();
+    img.src = `8%20bit%20originals/${encodeURIComponent(filename)}`;
+    spriteImages[filename] = img;
 
-let selectedSprite = SPRITES[0]; // default: Adam
-
-// Sprite picker interaction
-document.querySelectorAll('.sprite-card').forEach(card => {
-  card.addEventListener('click', () => {
-    document.querySelectorAll('.sprite-card').forEach(c => c.classList.remove('selected'));
-    card.classList.add('selected');
-    selectedSprite = card.dataset.sprite;
+    // Build card
+    const card = document.createElement('div');
+    card.className = 'sprite-card' + (i === 0 ? ' selected' : '');
+    card.dataset.sprite = filename;
+    const imgEl = document.createElement('img');
+    imgEl.src = img.src;
+    imgEl.alt = filename.replace(/\.[^.]+$/, '');
+    const label = document.createElement('span');
+    label.textContent = filename.replace(/\.[^.]+$/, '');
+    card.appendChild(imgEl);
+    card.appendChild(label);
+    picker.appendChild(card);
   });
-  // Also support touch
-  card.addEventListener('touchend', (e) => {
-    e.preventDefault();
-    document.querySelectorAll('.sprite-card').forEach(c => c.classList.remove('selected'));
-    card.classList.add('selected');
-    selectedSprite = card.dataset.sprite;
-  }, { passive: false });
+
+  if (sprites.length > 0) selectedSprite = sprites[0];
+}
+
+// Event delegation for sprite picker
+document.getElementById('sprite-picker').addEventListener('click', (e) => {
+  const card = e.target.closest('.sprite-card');
+  if (!card) return;
+  document.querySelectorAll('.sprite-card').forEach(c => c.classList.remove('selected'));
+  card.classList.add('selected');
+  selectedSprite = card.dataset.sprite;
 });
+document.getElementById('sprite-picker').addEventListener('touchend', (e) => {
+  const card = e.target.closest('.sprite-card');
+  if (!card) return;
+  e.preventDefault();
+  document.querySelectorAll('.sprite-card').forEach(c => c.classList.remove('selected'));
+  card.classList.add('selected');
+  selectedSprite = card.dataset.sprite;
+}, { passive: false });
+
+// Fetch sprite list from server and build picker
+fetch('/api/sprites')
+  .then(r => r.json())
+  .then(sprites => buildSpritePicker(sprites))
+  .catch(() => buildSpritePicker(['Adam.png'])); // fallback if fetch fails
 
 // --- Device ID (persistent, prevents same device joining twice) ---
 function getDeviceId() {
