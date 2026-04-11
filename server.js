@@ -110,7 +110,9 @@ const wss = new WebSocketServer({ server });
 function broadcast(msg) {
   const data = JSON.stringify(msg);
   wss.clients.forEach(client => {
-    if (client.readyState === 1) client.send(data);
+    if (client.readyState === 1) {
+      try { client.send(data); } catch (e) { /* ignore dead socket */ }
+    }
   });
 }
 
@@ -252,6 +254,14 @@ function startGame() {
 
 // --- Game Tick ---
 function gameTick() {
+  try {
+    gameTickInner();
+  } catch (err) {
+    console.error('[gameTick crash]', err);
+  }
+}
+
+function gameTickInner() {
   const now = Date.now();
   const dt = (now - lastTick) / 1000;
   lastTick = now;
@@ -399,15 +409,15 @@ function gameTick() {
     }
   }
 
-  // Update bombs
-  for (let i = bombs.length - 1; i >= 0; i--) {
-    const b = bombs[i];
-    if (!b.remote) {
-      b.timer -= dt;
-    }
-    if (b.timer <= 0) {
-      explodeBomb(i);
-    }
+  // Update bomb timers
+  bombs.forEach(b => { if (!b.remote) b.timer -= dt; });
+
+  // Explode expired bombs — use find-loop so chain explosions can't corrupt indices
+  let guard = 0;
+  while (guard++ < 300) {
+    const idx = bombs.findIndex(b => b.timer <= 0);
+    if (idx === -1) break;
+    explodeBomb(idx);
   }
 
   // Update explosions
