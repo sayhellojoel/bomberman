@@ -834,35 +834,10 @@ function drawPowerup(px, py, s, kind) {
   const pulse = 0.7 + Math.sin(Date.now() / 200) * 0.3;
 
   if (img && img.complete && img.naturalWidth > 0) {
-    // --- Icon image ---
-    const bgColor = colors[kind] || '#222';
-
-    // Glowing tinted background
-    ctx.fillStyle = kind === 'skull' ? '#2a0040' : '#222';
-    ctx.fillRect(px + pad, py + pad, s - pad * 2, s - pad * 2);
-    ctx.globalAlpha = pulse * 0.45;
-    ctx.fillStyle = bgColor;
-    ctx.fillRect(px + pad + 2, py + pad + 2, s - pad * 2 - 4, s - pad * 2 - 4);
-    ctx.globalAlpha = 1;
-
-    // Border
-    ctx.strokeStyle = kind === 'skull' ? '#ff00ff' : bgColor;
-    ctx.lineWidth = 2;
-    ctx.strokeRect(px + pad, py + pad, s - pad * 2, s - pad * 2);
-
-    // Draw icon image, maintaining aspect ratio, centered
+    // --- Icon image: fill the whole tile ---
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
-    const margin = pad + 4;
-    const maxW = s - margin * 2;
-    const maxH = s - margin * 2;
-    const aspect = img.naturalWidth / img.naturalHeight;
-    let dw, dh;
-    if (aspect >= 1) { dw = maxW; dh = maxW / aspect; }
-    else             { dh = maxH; dw = maxH * aspect; }
-    const dx = px + margin + (maxW - dw) / 2;
-    const dy = py + margin + (maxH - dh) / 2;
-    ctx.drawImage(img, dx, dy, dw, dh);
+    ctx.drawImage(img, px, py, s, s);
 
   } else {
     // --- Fallback: drawn tile with text symbol ---
