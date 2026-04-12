@@ -78,6 +78,7 @@ const mimeTypes = {
 };
 
 const SPRITES_DIR = path.join(__dirname, 'public', '8 bit originals');
+const ICONS_DIR  = path.join(__dirname, 'public', 'Icons');
 const IMAGE_EXTS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp']);
 
 function getAvailableSprites() {
@@ -85,6 +86,22 @@ function getAvailableSprites() {
     return fs.readdirSync(SPRITES_DIR).filter(f => IMAGE_EXTS.has(path.extname(f).toLowerCase()));
   } catch (e) {
     return [];
+  }
+}
+
+// Returns { symbol: filename } for every file in public/Icons/
+// e.g. { B: "B.png", SH: "SH.png", ... }
+function getAvailableIcons() {
+  try {
+    const files = fs.readdirSync(ICONS_DIR).filter(f => IMAGE_EXTS.has(path.extname(f).toLowerCase()));
+    const map = {};
+    files.forEach(f => {
+      const sym = path.basename(f, path.extname(f)); // "B.png" → "B"
+      map[sym] = f;
+    });
+    return map;
+  } catch (e) {
+    return {};
   }
 }
 
@@ -97,6 +114,14 @@ const server = http.createServer((req, res) => {
     const sprites = getAvailableSprites();
     res.writeHead(200, { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' });
     res.end(JSON.stringify(sprites));
+    return;
+  }
+
+  // API: list available powerup icons  { symbol → filename }
+  if (decodedUrl === '/api/icons') {
+    const icons = getAvailableIcons();
+    res.writeHead(200, { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' });
+    res.end(JSON.stringify(icons));
     return;
   }
 

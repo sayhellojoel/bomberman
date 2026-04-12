@@ -75,6 +75,22 @@ function updateTimer() {
 const spriteImages = {};
 let selectedSprite = null;
 
+// --- Powerup Icon Images ---
+// Keyed by symbol string (e.g. "B", "SH") — populated from /api/icons
+const iconImages = {};
+
+fetch('/api/icons')
+  .then(r => r.json())
+  .then(map => {
+    // map = { B: "B.png", SH: "SH.png", ... }
+    Object.entries(map).forEach(([sym, filename]) => {
+      const img = new Image();
+      img.src = `Icons/${encodeURIComponent(filename)}`;
+      iconImages[sym] = img;
+    });
+  })
+  .catch(() => {}); // silently fall back to drawn icons if fetch fails
+
 function buildSpritePicker(sprites) {
   const picker = document.getElementById('sprite-picker');
   picker.innerHTML = '';
@@ -383,19 +399,28 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
+// Returns an icon badge — image if loaded, otherwise styled text span
+function iconBadge(sym, cssClass, label) {
+  const img = iconImages[sym];
+  if (img && img.complete && img.naturalWidth > 0) {
+    return `<span class="pu-badge ${cssClass}" title="${label}"><img src="${img.src}" alt="${label}" class="pu-badge-icon"></span>`;
+  }
+  return `<span class="pu-badge ${cssClass}" title="${label}">${label}</span>`;
+}
+
 // --- Scoreboard with powerup badges ---
 function updateScoreboard(players) {
   scoreboard.innerHTML = players.map(p => {
     const isMe = p.id === myId;
     const badges = [];
 
-    if (p.bombRange > 1)  badges.push(`<span class="pu-badge pu-fire">F:${p.bombRange}</span>`);
-    if (p.maxBombs > 1)   badges.push(`<span class="pu-badge pu-bomb">B:${p.maxBombs}</span>`);
-    if (p.speed > 1)      badges.push(`<span class="pu-badge pu-speed">S:${p.speed}</span>`);
-    if (p.hasRemote)      badges.push(`<span class="pu-badge pu-remote">RC</span>`);
-    if (p.hasKick)        badges.push(`<span class="pu-badge pu-kick">K</span>`);
-    if (p.hasShield)      badges.push(`<span class="pu-badge pu-shield">SH</span>`);
-    if (p.curse)          badges.push(`<span class="pu-badge pu-curse">☠</span>`);
+    if (p.bombRange > 1)  badges.push(iconBadge('F',  'pu-fire',   `F:${p.bombRange}`));
+    if (p.maxBombs > 1)   badges.push(iconBadge('B',  'pu-bomb',   `B:${p.maxBombs}`));
+    if (p.speed > 1)      badges.push(iconBadge('S',  'pu-speed',  `S:${p.speed}`));
+    if (p.hasRemote)      badges.push(iconBadge('RC', 'pu-remote', 'RC'));
+    if (p.hasKick)        badges.push(iconBadge('K',  'pu-kick',   'K'));
+    if (p.hasShield)      badges.push(iconBadge('SH', 'pu-shield', 'SH'));
+    if (p.curse)          badges.push(`<span class="pu-badge pu-curse" title="Cursed">☠</span>`);
 
     const thumb = p.sprite
       ? `<img class="score-sprite" src="8%20bit%20originals/${encodeURIComponent(p.sprite)}" alt="">`
@@ -793,7 +818,6 @@ function drawPowerup(px, py, s, kind) {
   const cy = py + s / 2;
   const pad = 3;
 
-  // Background tile
   const colors = {
     fireUp: '#ff4444', bombUp: '#4444ff', speedUp: '#44bb44',
     fullFire: '#ff8800', remote: '#8844ff', kick: '#bbbb44',
@@ -805,33 +829,67 @@ function drawPowerup(px, py, s, kind) {
     skull: 'SK', shield: 'SH'
   };
 
-  // Glowing background
-  ctx.fillStyle = kind === 'skull' ? '#2a0040' : '#222';
-  ctx.fillRect(px + pad, py + pad, s - pad * 2, s - pad * 2);
-  ctx.fillStyle = colors[kind] || '#888';
-  ctx.globalAlpha = 0.7 + Math.sin(Date.now() / 200) * 0.3;
-  ctx.fillRect(px + pad + 2, py + pad + 2, s - pad * 2 - 4, s - pad * 2 - 4);
-  ctx.globalAlpha = 1;
+  const sym = symbols[kind];
+  const img = sym ? iconImages[sym] : null;
+  const pulse = 0.7 + Math.sin(Date.now() / 200) * 0.3;
 
-  // Border
-  ctx.strokeStyle = kind === 'skull' ? '#ff00ff' : '#fff';
-  ctx.lineWidth = 2;
-  ctx.strokeRect(px + pad, py + pad, s - pad * 2, s - pad * 2);
+  if (img && img.complete && img.naturalWidth > 0) {
+    // --- Icon image ---
+    const bgColor = colors[kind] || '#222';
 
-  // Symbol
-  ctx.fillStyle = '#fff';
-  ctx.font = `bold ${Math.floor(s * 0.35)}px Arial`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(symbols[kind], cx, cy);
+    // Glowing tinted background
+    ctx.fillStyle = kind === 'skull' ? '#2a0040' : '#222';
+    ctx.fillRect(px + pad, py + pad, s - pad * 2, s - pad * 2);
+    ctx.globalAlpha = pulse * 0.45;
+    ctx.fillStyle = bgColor;
+    ctx.fillRect(px + pad + 2, py + pad + 2, s - pad * 2 - 4, s - pad * 2 - 4);
+    ctx.globalAlpha = 1;
 
-  // Skull special: draw a skull-like shape
-  if (kind === 'skull') {
-    ctx.strokeStyle = '#ff00ff';
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.arc(cx, cy - 2, s * 0.18, 0, Math.PI * 2);
-    ctx.stroke();
+    // Border
+    ctx.strokeStyle = kind === 'skull' ? '#ff00ff' : bgColor;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(px + pad, py + pad, s - pad * 2, s - pad * 2);
+
+    // Draw icon image, maintaining aspect ratio, centered
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    const margin = pad + 4;
+    const maxW = s - margin * 2;
+    const maxH = s - margin * 2;
+    const aspect = img.naturalWidth / img.naturalHeight;
+    let dw, dh;
+    if (aspect >= 1) { dw = maxW; dh = maxW / aspect; }
+    else             { dh = maxH; dw = maxH * aspect; }
+    const dx = px + margin + (maxW - dw) / 2;
+    const dy = py + margin + (maxH - dh) / 2;
+    ctx.drawImage(img, dx, dy, dw, dh);
+
+  } else {
+    // --- Fallback: drawn tile with text symbol ---
+    ctx.fillStyle = kind === 'skull' ? '#2a0040' : '#222';
+    ctx.fillRect(px + pad, py + pad, s - pad * 2, s - pad * 2);
+    ctx.fillStyle = colors[kind] || '#888';
+    ctx.globalAlpha = pulse;
+    ctx.fillRect(px + pad + 2, py + pad + 2, s - pad * 2 - 4, s - pad * 2 - 4);
+    ctx.globalAlpha = 1;
+
+    ctx.strokeStyle = kind === 'skull' ? '#ff00ff' : '#fff';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(px + pad, py + pad, s - pad * 2, s - pad * 2);
+
+    ctx.fillStyle = '#fff';
+    ctx.font = `bold ${Math.floor(s * 0.35)}px Arial`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(sym || '?', cx, cy);
+
+    if (kind === 'skull') {
+      ctx.strokeStyle = '#ff00ff';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(cx, cy - 2, s * 0.18, 0, Math.PI * 2);
+      ctx.stroke();
+    }
   }
 }
 
