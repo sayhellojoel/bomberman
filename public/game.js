@@ -243,7 +243,12 @@ function handleMessage(msg) {
       // Detect local player death
       const prevMe = gameState && myId ? gameState.players.find(p => p.id === myId) : null;
       const nextMe = myId ? msg.players.find(p => p.id === myId) : null;
-      if (prevMe && prevMe.alive && nextMe && !nextMe.alive) showDiedOverlay();
+      if (prevMe && prevMe.alive && nextMe && !nextMe.alive) {
+        // Check if there's already a winner (last player standing)
+        const alivePlayers = msg.players.filter(p => p.alive);
+        const winnerName = alivePlayers.length === 1 ? alivePlayers[0].name : null;
+        showDiedOverlay(winnerName);
+      }
       gameState = msg;
       updateScoreboard(msg.players);
       break;
@@ -355,13 +360,21 @@ function updateLobbyUI(data) {
 
 // --- Died overlay ---
 let diedOverlayTimeout = null;
-function showDiedOverlay() {
+function showDiedOverlay(winnerName) {
   const el = document.getElementById('died-overlay');
+  const winnerEl = document.getElementById('died-winner');
+  if (winnerName) {
+    winnerEl.textContent = `🏆 ${winnerName} wins!`;
+    winnerEl.style.display = 'block';
+  } else {
+    winnerEl.style.display = 'none';
+  }
   el.style.display = 'flex';
+  el.style.opacity = '1';
   clearTimeout(diedOverlayTimeout);
-  // Fade out after 2.5s — round end will also hide it
-  diedOverlayTimeout = setTimeout(() => { el.style.opacity = '0'; }, 2000);
-  setTimeout(() => { el.style.display = 'none'; el.style.opacity = '1'; }, 2800);
+  // Fade out after 3s — round end will also hide it
+  diedOverlayTimeout = setTimeout(() => { el.style.opacity = '0'; }, 3000);
+  setTimeout(() => { el.style.display = 'none'; el.style.opacity = '1'; }, 3800);
 }
 function hideDiedOverlay() {
   clearTimeout(diedOverlayTimeout);
@@ -399,11 +412,12 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
-// Returns an icon badge — image if loaded, otherwise styled text span
+// Returns an icon badge — plain image if loaded, otherwise coloured text span
 function iconBadge(sym, cssClass, label) {
   const img = iconImages[sym];
   if (img && img.complete && img.naturalWidth > 0) {
-    return `<span class="pu-badge ${cssClass}" title="${label}"><img src="${img.src}" alt="${label}" class="pu-badge-icon"></span>`;
+    // Just the icon image, no coloured background
+    return `<img src="${img.src}" alt="${label}" title="${label}" class="pu-badge-icon-standalone">`;
   }
   return `<span class="pu-badge ${cssClass}" title="${label}">${label}</span>`;
 }

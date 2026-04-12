@@ -251,7 +251,7 @@ function generateGrid(mapIndex) {
 
 // --- Power-up Types ---
 const POWERUP_TYPES = ['fireUp', 'bombUp', 'speedUp', 'fullFire', 'remote', 'kick', 'skull', 'shield'];
-const POWERUP_WEIGHTS = [25, 25, 15, 5, 10, 10, 7, 3]; // weighted random
+const POWERUP_WEIGHTS = [25, 25, 15, 5, 10, 5, 7, 0]; // weighted random (shield=0 removed, kick=5%)
 
 function randomPowerup() {
   const totalWeight = POWERUP_WEIGHTS.reduce((a, b) => a + b, 0);
@@ -416,7 +416,10 @@ function gameTickInner() {
               if (p.hasKick) {
                 // Kick the bomb
                 const bomb = bombs.find(b => b.x === nx && b.y === ny);
-                if (bomb && !kickedBombs.some(kb => kb.bomb === bomb)) {
+                if (bomb) {
+                  // Remove any existing kick (allows redirecting / kicking back)
+                  const existingIdx = kickedBombs.findIndex(kb => kb.bomb === bomb);
+                  if (existingIdx !== -1) kickedBombs.splice(existingIdx, 1);
                   kickedBombs.push({ bomb, dx, dy, moveProgress: 0 });
                 }
               }
@@ -466,10 +469,16 @@ function gameTickInner() {
       const nx = kb.bomb.x + kb.dx;
       const ny = kb.bomb.y + kb.dy;
 
-      if (nx < 0 || nx >= GRID_W || ny < 0 || ny >= GRID_H ||
-          grid[ny][nx] === 'W' || grid[ny][nx] === 'B' ||
-          bombs.some(b => b !== kb.bomb && b.x === nx && b.y === ny)) {
-        // Hit a wall / another bomb — stop
+      const hitsWall = nx < 0 || nx >= GRID_W || ny < 0 || ny >= GRID_H ||
+          grid[ny][nx] === 'W' || grid[ny][nx] === 'B';
+      const hitsBomb = bombs.some(b => b !== kb.bomb && b.x === nx && b.y === ny);
+      const hitsPlayer = playerOrder.some(id => {
+        const p = players[id];
+        return p.alive && p.x === nx && p.y === ny;
+      });
+
+      if (hitsWall || hitsBomb || hitsPlayer) {
+        // Stop in current tile — do not advance
         kb.moveProgress = 0;
         kickedBombs.splice(i, 1);
       } else {
