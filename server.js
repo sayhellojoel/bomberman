@@ -461,30 +461,30 @@ function gameTickInner() {
   const KICK_SPEED = 4;
   for (let i = kickedBombs.length - 1; i >= 0; i--) {
     const kb = kickedBombs[i];
+    const nx = kb.bomb.x + kb.dx;
+    const ny = kb.bomb.y + kb.dy;
+
+    // Pre-check BEFORE advancing: if the next tile is already blocked, stop immediately.
+    // This prevents the bomb from visually sliding toward an obstacle — it just stays put.
+    const hitsWall = nx < 0 || nx >= GRID_W || ny < 0 || ny >= GRID_H ||
+        grid[ny][nx] === 'W' || grid[ny][nx] === 'B';
+    const hitsBomb = bombs.some(b => b !== kb.bomb && b.x === nx && b.y === ny);
+    const hitsPlayer = playerOrder.some(id => {
+      const p = players[id];
+      return p.alive && p.x === nx && p.y === ny;
+    });
+
+    if (hitsWall || hitsBomb || hitsPlayer) {
+      kickedBombs.splice(i, 1);
+      continue;
+    }
+
+    // Next tile is clear — advance the animation
     kb.moveProgress += KICK_SPEED * dt;
-
     if (kb.moveProgress >= 1) {
-      // Consume one full tile step
       kb.moveProgress -= 1;
-      const nx = kb.bomb.x + kb.dx;
-      const ny = kb.bomb.y + kb.dy;
-
-      const hitsWall = nx < 0 || nx >= GRID_W || ny < 0 || ny >= GRID_H ||
-          grid[ny][nx] === 'W' || grid[ny][nx] === 'B';
-      const hitsBomb = bombs.some(b => b !== kb.bomb && b.x === nx && b.y === ny);
-      const hitsPlayer = playerOrder.some(id => {
-        const p = players[id];
-        return p.alive && p.x === nx && p.y === ny;
-      });
-
-      if (hitsWall || hitsBomb || hitsPlayer) {
-        // Stop in current tile — do not advance
-        kb.moveProgress = 0;
-        kickedBombs.splice(i, 1);
-      } else {
-        kb.bomb.x = nx;
-        kb.bomb.y = ny;
-      }
+      kb.bomb.x = nx;
+      kb.bomb.y = ny;
     }
   }
 

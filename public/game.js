@@ -76,7 +76,9 @@ const spriteImages = {};
 let selectedSprite = null;
 
 // --- Powerup Icon Images ---
-// Keyed by symbol string (e.g. "B", "SH") — populated from /api/icons
+// iconUrls: sym → URL string (available as soon as /api/icons responds — used for HTML <img> tags)
+// iconImages: sym → Image object (used for canvas drawing — needs .complete check)
+const iconUrls = {};
 const iconImages = {};
 
 fetch('/api/icons')
@@ -84,9 +86,11 @@ fetch('/api/icons')
   .then(map => {
     // map = { B: "B.png", SH: "SH.png", ... }
     Object.entries(map).forEach(([sym, filename]) => {
+      const url = `Icons/${encodeURIComponent(filename)}`;
+      iconUrls[sym] = url;   // immediately usable in HTML img tags
       const img = new Image();
-      img.src = `Icons/${encodeURIComponent(filename)}`;
-      iconImages[sym] = img;
+      img.src = url;
+      iconImages[sym] = img; // for canvas — browser loads it in background
     });
   })
   .catch(() => {}); // silently fall back to drawn icons if fetch fails
@@ -412,12 +416,10 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
-// Returns an icon badge — plain image if loaded, otherwise coloured text span
+// Returns an icon badge — uses URL directly so mobile browsers load it lazily without a .complete check
 function iconBadge(sym, cssClass, label) {
-  const img = iconImages[sym];
-  if (img && img.complete && img.naturalWidth > 0) {
-    // Just the icon image, no coloured background
-    return `<img src="${img.src}" alt="${label}" title="${label}" class="pu-badge-icon-standalone">`;
+  if (iconUrls[sym]) {
+    return `<img src="${iconUrls[sym]}" alt="${label}" title="${label}" class="pu-badge-icon-standalone">`;
   }
   return `<span class="pu-badge ${cssClass}" title="${label}">${label}</span>`;
 }
@@ -462,17 +464,14 @@ function showRoundEnd(msg) {
 }
 
 // --- Quit Button ---
-quitBtn.addEventListener('click', () => { quitModal.style.display = 'flex'; });
-quitBtn.addEventListener('touchend', (e) => { e.preventDefault(); quitModal.style.display = 'flex'; }, { passive: false });
+// Use pointerdown — fires immediately on both mouse and touch, no 300ms mobile delay
+quitBtn.addEventListener('pointerdown', (e) => { e.preventDefault(); quitModal.style.display = 'flex'; });
 
 function doCancel() { quitModal.style.display = 'none'; }
 function doQuit() { window.location.reload(); }
 
-document.getElementById('quitCancel').addEventListener('click', doCancel);
-document.getElementById('quitCancel').addEventListener('touchend', (e) => { e.preventDefault(); doCancel(); }, { passive: false });
-
-document.getElementById('quitConfirm').addEventListener('click', doQuit);
-document.getElementById('quitConfirm').addEventListener('touchend', (e) => { e.preventDefault(); doQuit(); }, { passive: false });
+document.getElementById('quitCancel').addEventListener('pointerdown', (e) => { e.preventDefault(); doCancel(); });
+document.getElementById('quitConfirm').addEventListener('pointerdown', (e) => { e.preventDefault(); doQuit(); });
 
 // --- Canvas Resize ---
 function resizeCanvas() {
@@ -974,10 +973,28 @@ document.querySelectorAll('.dpad-btn').forEach(btn => {
   btn.addEventListener('touchcancel', stop, { passive: false });
 });
 
-document.getElementById('bombBtn').addEventListener('touchstart', (e) => {
+// Bomb button: touchstart for instant response; touchend as fallback if touchstart was swallowed
+let _bombTouchStartFired = false;
+const bombBtnEl = document.getElementById('bombBtn');
+bombBtnEl.addEventListener('touchstart', (e) => {
   e.preventDefault();
+  e.stopPropagation();
+  _bombTouchStartFired = true;
   send({ type: 'input', action: 'bomb' });
 }, { passive: false });
+bombBtnEl.addEventListener('touchend', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  if (!_bombTouchStartFired) {
+    // touchstart was swallowed by something — fire now instead
+    send({ type: 'input', action: 'bomb' });
+  }
+  _bombTouchStartFired = false;
+}, { passive: false });
+// Also handle click for desktop testing
+bombBtnEl.addEventListener('click', () => {
+  if (!('ontouchstart' in window)) send({ type: 'input', action: 'bomb' });
+});
 
 // --- Lobby Controls ---
 joinBtn.addEventListener('click', () => {

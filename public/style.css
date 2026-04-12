@@ -1,11 +1,21 @@
 /* style.css — Bomberman styling */
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
+/* Prevent ALL scrolling/bounce — this is a fixed full-screen game */
+html {
+  overflow: hidden;
+  overscroll-behavior: none;
+  position: fixed;
+  width: 100%;
+  height: 100%;
+}
+
 body {
   background: #1a1a2e;
   color: #eee;
   font-family: 'Segoe UI', Arial, sans-serif;
   overflow: hidden;
+  overscroll-behavior: none;
   height: 100vh;
   display: flex;
   flex-direction: column;
@@ -13,6 +23,7 @@ body {
   justify-content: center;
   user-select: none;
   -webkit-user-select: none;
+  touch-action: manipulation; /* allow taps, block pinch-zoom and double-tap-zoom */
 }
 
 /* =====================
@@ -176,6 +187,7 @@ button:active { transform: scale(0.95); }
   gap: 10px;
   justify-content: center;
   flex-wrap: wrap;
+  touch-action: pan-x pan-y; /* allow scrolling inside the picker on mobile */
   margin: 4px 0 8px;
 }
 
@@ -803,11 +815,21 @@ button:active { transform: scale(0.95); }
 #quitConfirm {
   background: #c0392b;
   color: #fff;
-  padding: 10px 24px;
+  padding: 14px 32px;
+  font-size: 1.1rem;
+  min-width: 110px;
+  min-height: 48px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
 }
 
 #quitCancel {
   background: #444;
   color: #eee;
-  padding: 10px 24px;
+  padding: 14px 32px;
+  font-size: 1.1rem;
+  min-width: 110px;
+  min-height: 48px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
 }
