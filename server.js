@@ -585,13 +585,17 @@ function explodeBomb(index) {
         }
         break; // Explosion stops at soft block
       }
-      addExplosion(ex, ey);
+      // Check if there's a powerup here — explosion destroys it but stops
+      const hasPowerup = powerups.some(pu => pu.x === ex && pu.y === ey);
+      addExplosion(ex, ey); // removes powerup if present
 
-      // Chain-detonate other bombs
+      // Chain-detonate other bombs at this tile
       const chainIdx = bombs.findIndex(b => b.x === ex && b.y === ey);
       if (chainIdx !== -1) {
         explodeBomb(chainIdx);
       }
+
+      if (hasPowerup) break; // explosion blocked by powerup — doesn't travel past
     }
   });
 }
