@@ -430,7 +430,8 @@ function updateScoreboard(players) {
     const isMe = p.id === myId;
     const badges = [];
 
-    if (p.bombRange > 1)  badges.push(iconBadge('F',  'pu-fire',   `F:${p.bombRange}`));
+    if (p.bombRange >= 8) badges.push(iconBadge('FF', 'pu-fire',   'Full Fire'));
+    else if (p.bombRange > 1) badges.push(iconBadge('F', 'pu-fire', `F:${p.bombRange}`));
     if (p.maxBombs > 1)   badges.push(iconBadge('B',  'pu-bomb',   `B:${p.maxBombs}`));
     if (p.speed > 1)      badges.push(iconBadge('S',  'pu-speed',  `S:${p.speed}`));
     if (p.hasRemote)      badges.push(iconBadge('RC', 'pu-remote', 'RC'));
@@ -452,7 +453,14 @@ function updateScoreboard(players) {
 
 // --- Round End ---
 function showRoundEnd(msg) {
-  hideDiedOverlay();
+  hideDiedOverlay(); // clear the in-game overlay — round-end handles it from here
+
+  // If the local player died this round, show "You died!" inside the round-end overlay
+  // so both messages stay visible together for the full 4-second round-end screen
+  const roundEndDied = document.getElementById('roundEndDied');
+  const iDied = myId && gameState && gameState.players.some(p => p.id === myId && !p.alive);
+  roundEndDied.style.display = (iDied && !msg.draw) ? 'block' : 'none';
+
   roundEndDiv.style.display = 'flex';
   if (msg.draw) {
     roundEndText.textContent = 'DRAW!';
@@ -464,14 +472,19 @@ function showRoundEnd(msg) {
 }
 
 // --- Quit Button ---
-// Use pointerdown — fires immediately on both mouse and touch, no 300ms mobile delay
-quitBtn.addEventListener('pointerdown', (e) => { e.preventDefault(); quitModal.style.display = 'flex'; });
+// touchstart fires instantly on mobile; preventDefault on it cancels the 300ms synthetic click
+// so we won't double-fire. The plain click handler catches desktop mice.
+function addTapHandler(el, fn) {
+  el.addEventListener('touchstart', (e) => { e.preventDefault(); fn(); }, { passive: false });
+  el.addEventListener('click', fn);
+}
 
 function doCancel() { quitModal.style.display = 'none'; }
 function doQuit() { window.location.reload(); }
 
-document.getElementById('quitCancel').addEventListener('pointerdown', (e) => { e.preventDefault(); doCancel(); });
-document.getElementById('quitConfirm').addEventListener('pointerdown', (e) => { e.preventDefault(); doQuit(); });
+addTapHandler(quitBtn, () => { quitModal.style.display = 'flex'; });
+addTapHandler(document.getElementById('quitCancel'), doCancel);
+addTapHandler(document.getElementById('quitConfirm'), doQuit);
 
 // --- Canvas Resize ---
 function resizeCanvas() {
