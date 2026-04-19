@@ -966,25 +966,162 @@ function startMoveRepeat(key) {
   }, 120);
 }
 
-// Mobile controls
-document.querySelectorAll('.dpad-btn').forEach(btn => {
-  let interval = null;
-  const dir = btn.dataset.dir;
+// Virtual joystick (mobile)
+(function () {
+  // ── Tuning constants ─────────────────────────────────────────────────────
+  const DEAD_ZONE   = 10;   // px from touch origin — no movement
+  const INNER_MAX   = 32;   // px — inner zone upper boundary (single step)
+  const OUTER_DELAY = 150;  // ms before continuous movement begins in outer zone
+  const MOVE_REPEAT = 150;  // ms between repeated moves while in outer zone
+  const KNOB_INNER  = 24;   // px knob offset in inner zone (visual feedback)
+  const KNOB_OUTER  = 50;   // px knob offset in outer zone (visual feedback)
 
-  const start = (e) => {
-    e.preventDefault();
-    send({ type: 'input', action: 'move', dir });
-    interval = setInterval(() => send({ type: 'input', action: 'move', dir }), 120);
-  };
-  const stop = (e) => {
-    e.preventDefault();
-    clearInterval(interval);
-  };
+  const joystickKnob = document.getElementById('joystick-knob');
+  const joystickBase = document.getElementById('joystick-base');
 
-  btn.addEventListener('touchstart', start, { passive: false });
-  btn.addEventListener('touchend', stop, { passive: false });
-  btn.addEventListener('touchcancel', stop, { passive: false });
-});
+  // ── State ─────────────────────────────────────────────────────────────────
+  let touchActive      = false;
+  let originX          = 0;
+  let originY          = 0;
+  let joyZone          = 'dead'; // 'dead' | 'inner' | 'outer'
+  let joyDir           = null;   // 'up' | 'down' | 'left' | 'right' | null
+  let innerStepFired   = false;
+  let outerDelayTimer  = null;
+  let outerRepeatTimer = null;
+
+  // ── Helpers ───────────────────────────────────────────────────────────────
+
+  // Snap analog displacement to the nearest cardinal direction.
+  function snap4(dx, dy) {
+    return Math.abs(dx) >= Math.abs(dy)
+      ? (dx > 0 ? 'right' : 'left')
+      : (dy > 0 ? 'down'  : 'up');
+  }
+
+  function clearOuterTimers() {
+    clearTimeout(outerDelayTimer);
+    clearInterval(outerRepeatTimer);
+    outerDelayTimer  = null;
+    outerRepeatTimer = null;
+  }
+
+  // Begin repeating moves at MOVE_REPEAT interval (called after OUTER_DELAY).
+  function startContinuous() {
+    clearInterval(outerRepeatTimer);
+    const dir = joyDir;
+    outerRepeatTimer = setInterval(() => {
+      if (joyDir === dir && joyZone === 'outer') {
+        send({ type: 'input', action: 'move', dir });
+      }
+    }, MOVE_REPEAT);
+  }
+
+  // Move knob visually and update data attributes for CSS zone colouring.
+  function updateKnob(dir, zone) {
+    if (!joystickKnob || !joystickBase) return;
+    let x = 0;
+    let y = 0;
+    const off = zone === 'inner' ? KNOB_INNER : zone === 'outer' ? KNOB_OUTER : 0;
+    if      (dir === 'up')    y = -off;
+    else if (dir === 'down')  y =  off;
+    else if (dir === 'left')  x = -off;
+    else if (dir === 'right') x =  off;
+    joystickKnob.style.setProperty('--jx', x + 'px');
+    joystickKnob.style.setProperty('--jy', y + 'px');
+    joystickBase.dataset.zone = zone;
+    joystickBase.dataset.dir  = dir || '';
+  }
+
+  // Reset everything to neutral.
+  function resetJoystick() {
+    clearOuterTimers();
+    joyZone        = 'dead';
+    joyDir         = null;
+    innerStepFired = false;
+    updateKnob(null, 'dead');
+  }
+
+  // ── Core input processing ─────────────────────────────────────────────────
+  function processTouch(clientX, clientY) {
+    const dx   = clientX - originX;
+    const dy   = clientY - originY;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+
+    // Dead zone — finger drift shouldn't trigger movement.
+    if (dist < DEAD_ZONE) {
+      if (joyZone !== 'dead') resetJoystick();
+      return;
+    }
+
+    // Snap to one of 4 cardinal directions.
+    const newDir = snap4(dx, dy);
+
+    // Direction change: cancel any running timers and reset step tracking.
+    if (newDir !== joyDir) {
+      clearOuterTimers();
+      innerStepFired = false;
+      joyDir = newDir;
+    }
+
+    if (dist < INNER_MAX) {
+      // ── Inner zone: fire exactly one step per engagement ─────────────────
+      if (joyZone === 'outer') clearOuterTimers();
+      joyZone = 'inner';
+      if (!innerStepFired) {
+        send({ type: 'input', action: 'move', dir: joyDir });
+        innerStepFired = true;
+      }
+      updateKnob(joyDir, 'inner');
+    } else {
+      // ── Outer zone: continuous movement after OUTER_DELAY ─────────────────
+      if (joyZone !== 'outer') {
+        joyZone = 'outer';
+        // Fire an initial step if the inner zone didn't already fire one
+        // (handles fingers that push straight past the inner zone).
+        if (!innerStepFired) {
+          send({ type: 'input', action: 'move', dir: joyDir });
+          innerStepFired = true;
+        }
+        // Short delay before continuous movement to avoid accidental multi-tile moves.
+        outerDelayTimer = setTimeout(startContinuous, OUTER_DELAY);
+      }
+      updateKnob(joyDir, 'outer');
+    }
+  }
+
+  // ── Touch event handlers ──────────────────────────────────────────────────
+
+  // Each new touch sets its own origin — "floating neutral" behaviour.
+  function onTouchStart(e) {
+    if (inLobby) return;
+    e.preventDefault();
+    const t = e.changedTouches[0];
+    touchActive = true;
+    originX = t.clientX;
+    originY = t.clientY;
+    resetJoystick();
+  }
+
+  function onTouchMove(e) {
+    if (!touchActive || inLobby) return;
+    e.preventDefault();
+    const t = e.touches[0];
+    if (!t) return;
+    processTouch(t.clientX, t.clientY);
+  }
+
+  function onTouchEnd(e) {
+    if (!touchActive) return;
+    e.preventDefault();
+    touchActive = false;
+    resetJoystick();
+  }
+
+  ctrlDpad.addEventListener('touchstart',  onTouchStart, { passive: false });
+  ctrlDpad.addEventListener('touchmove',   onTouchMove,  { passive: false });
+  ctrlDpad.addEventListener('touchend',    onTouchEnd,   { passive: false });
+  ctrlDpad.addEventListener('touchcancel', onTouchEnd,   { passive: false });
+}());
 
 // Bomb button: touchstart for instant response; touchend as fallback if touchstart was swallowed
 let _bombTouchStartFired = false;

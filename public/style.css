@@ -519,43 +519,66 @@ button:active { transform: scale(0.95); }
 }
 
 /* =====================
-   D-PAD & BOMB BUTTON
+   VIRTUAL JOYSTICK & BOMB BUTTON
    ===================== */
 
-#dpad {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-}
-
-.dpad-mid-row {
-  display: flex;
-  gap: 2px;
-  align-items: center;
-}
-
-.dpad-btn {
-  width: 67px;
-  height: 67px;
-  background: #444;
-  border: 2px solid #666;
-  border-radius: 8px;
-  color: #fff;
-  font-size: 1.4rem;
+#joystick {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 0;
+  width: 100%;
+  height: 100%;
 }
 
-.dpad-btn:active { background: #ff6b35; }
+#joystick-base {
+  position: relative;
+  width: 140px;
+  height: 140px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.06);
+  border: 2px solid rgba(255, 255, 255, 0.18);
+  flex-shrink: 0;
+  touch-action: none;
+}
 
-.dpad-center {
-  width: 67px;
-  height: 67px;
-  background: #333;
-  border-radius: 8px;
+/* Inner zone boundary ring — visual guide only */
+#joystick-ring {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  border: 1px dashed rgba(255, 255, 255, 0.18);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+/* Knob — moves to show current direction + zone */
+#joystick-knob {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: rgba(180, 180, 180, 0.55);
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  transform: translate(calc(-50% + var(--jx, 0px)), calc(-50% + var(--jy, 0px)));
+  transition: transform 0.07s ease-out, background 0.07s ease-out, box-shadow 0.07s ease-out;
+  pointer-events: none;
+}
+
+#joystick-base[data-zone="inner"] #joystick-knob {
+  background: rgba(255, 107, 53, 0.75);
+  border-color: #ff6b35;
+  box-shadow: 0 0 10px rgba(255, 107, 53, 0.5);
+}
+
+#joystick-base[data-zone="outer"] #joystick-knob {
+  background: rgba(255, 60, 60, 0.85);
+  border-color: #ff3333;
+  box-shadow: 0 0 14px rgba(255, 50, 50, 0.6);
 }
 
 #bombBtn {
@@ -718,14 +741,13 @@ button:active { transform: scale(0.95); }
     padding-top: 44px;
   }
 
-  /* Slightly smaller dpad buttons to fit the column */
-  .dpad-btn {
-    width: 60px;
-    height: 60px;
-    font-size: 1.2rem;
+  /* Slightly smaller joystick to fit the column */
+  #joystick-base {
+    width: 120px;
+    height: 120px;
   }
 
-  .dpad-center {
+  #joystick-ring {
     width: 60px;
     height: 60px;
   }
