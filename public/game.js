@@ -969,12 +969,15 @@ function startMoveRepeat(key) {
 // Virtual joystick (mobile)
 (function () {
   // ── Tuning constants ─────────────────────────────────────────────────────
-  const DEAD_ZONE   = 10;   // px from touch origin — no movement
-  const INNER_MAX   = 32;   // px — inner zone upper boundary (single step)
-  const OUTER_DELAY = 150;  // ms before continuous movement begins in outer zone
-  const MOVE_REPEAT = 150;  // ms between repeated moves while in outer zone
-  const KNOB_INNER  = 24;   // px knob offset in inner zone (visual feedback)
-  const KNOB_OUTER  = 50;   // px knob offset in outer zone (visual feedback)
+  const DEAD_ZONE        = 10;   // px from touch origin — no movement
+  const INNER_MAX        = 32;   // px — inner zone upper boundary (single step)
+  const OUTER_DELAY      = 150;  // ms before continuous movement begins in outer zone
+  const MOVE_REPEAT      = 150;  // ms between repeated moves while in outer zone
+  const KNOB_INNER       = 24;   // px knob offset in inner zone (visual feedback)
+  const KNOB_OUTER       = 50;   // px knob offset in outer zone (visual feedback)
+  // Hysteresis: tan(57°) ≈ 1.54 — perpendicular component must exceed this ratio
+  // relative to the dominant component to switch axis (~12° guard past the 45° boundary).
+  const HYSTERESIS_RATIO = 1.54;
 
   const joystickKnob = document.getElementById('joystick-knob');
   const joystickBase = document.getElementById('joystick-base');
@@ -991,11 +994,27 @@ function startMoveRepeat(key) {
 
   // ── Helpers ───────────────────────────────────────────────────────────────
 
-  // Snap analog displacement to the nearest cardinal direction.
+  // Snap analog displacement to the nearest cardinal direction (no hysteresis).
   function snap4(dx, dy) {
     return Math.abs(dx) >= Math.abs(dy)
       ? (dx > 0 ? 'right' : 'left')
       : (dy > 0 ? 'down'  : 'up');
+  }
+
+  // Snap with hysteresis: given a current direction, only switch axis when the
+  // perpendicular component clearly dominates by HYSTERESIS_RATIO. This prevents
+  // flickering when the thumb sits near a 45-degree boundary.
+  function snap4Hysteresis(dx, dy, current) {
+    if (!current) return snap4(dx, dy);
+    const ax = Math.abs(dx);
+    const ay = Math.abs(dy);
+    if (current === 'left' || current === 'right') {
+      if (ay > ax * HYSTERESIS_RATIO) return dy > 0 ? 'down' : 'up';
+      return dx > 0 ? 'right' : 'left';
+    } else {
+      if (ax > ay * HYSTERESIS_RATIO) return dx > 0 ? 'right' : 'left';
+      return dy > 0 ? 'down' : 'up';
+    }
   }
 
   function clearOuterTimers() {
@@ -1006,12 +1025,13 @@ function startMoveRepeat(key) {
   }
 
   // Begin repeating moves at MOVE_REPEAT interval (called after OUTER_DELAY).
+  // Reads joyDir at each tick so mid-interval direction changes are always sent
+  // in the current direction rather than the direction at timer creation time.
   function startContinuous() {
     clearInterval(outerRepeatTimer);
-    const dir = joyDir;
     outerRepeatTimer = setInterval(() => {
-      if (joyDir === dir && joyZone === 'outer') {
-        send({ type: 'input', action: 'move', dir });
+      if (joyZone === 'outer' && joyDir) {
+        send({ type: 'input', action: 'move', dir: joyDir });
       }
     }, MOVE_REPEAT);
   }
@@ -1053,18 +1073,21 @@ function startMoveRepeat(key) {
       return;
     }
 
-    // Snap to one of 4 cardinal directions.
-    const newDir = snap4(dx, dy);
+    // Snap to one of 4 cardinal directions, with hysteresis to prevent flicker.
+    const newDir     = snap4Hysteresis(dx, dy, joyDir);
+    const dirChanged = (newDir !== joyDir);
 
-    // Direction change: cancel any running timers and reset step tracking.
-    if (newDir !== joyDir) {
+    if (dirChanged) {
+      // Direction changed: cancel running timers but keep the zone so that
+      // outer-zone movement restarts in the new direction immediately rather
+      // than requiring the thumb to return to neutral first.
       clearOuterTimers();
       innerStepFired = false;
       joyDir = newDir;
     }
 
     if (dist < INNER_MAX) {
-      // ── Inner zone: fire exactly one step per engagement ─────────────────
+      // ── Inner zone: fire exactly one step per direction engagement ────────
       if (joyZone === 'outer') clearOuterTimers();
       joyZone = 'inner';
       if (!innerStepFired) {
@@ -1074,15 +1097,19 @@ function startMoveRepeat(key) {
       updateKnob(joyDir, 'inner');
     } else {
       // ── Outer zone: continuous movement after OUTER_DELAY ─────────────────
-      if (joyZone !== 'outer') {
+      //
+      // Trigger on first entry into outer zone, OR on any direction change
+      // while already in outer zone — both cases need a fresh step + delay
+      // so the new direction starts cleanly without returning to neutral.
+      if (joyZone !== 'outer' || dirChanged) {
         joyZone = 'outer';
-        // Fire an initial step if the inner zone didn't already fire one
-        // (handles fingers that push straight past the inner zone).
+        // Fire one immediate step for the new direction (unless inner zone
+        // already fired it — handles fingers that skip straight past inner).
         if (!innerStepFired) {
           send({ type: 'input', action: 'move', dir: joyDir });
           innerStepFired = true;
         }
-        // Short delay before continuous movement to avoid accidental multi-tile moves.
+        // Guard delay before continuous movement begins.
         outerDelayTimer = setTimeout(startContinuous, OUTER_DELAY);
       }
       updateKnob(joyDir, 'outer');
