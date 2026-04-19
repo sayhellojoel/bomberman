@@ -8,30 +8,80 @@ const maps = require('./maps');
 const PORT = process.env.PORT || 3000;
 const TICK_RATE = 60;
 const TICK_MS = 1000 / TICK_RATE;
-const GRID_W = 15;
-const GRID_H = 13;
 
-// Spawn positions (grid coords) for up to 4 players — corners
-const SPAWNS = [
+// Grid dimensions — small maps are 15×13, large maps are 23×19
+const GRID_W_SMALL = 15;
+const GRID_H_SMALL = 13;
+const GRID_W_LARGE = 23;
+const GRID_H_LARGE = 19;
+
+// Set at round start by generateGrid(); used throughout the tick logic
+let currentGridW = GRID_W_SMALL;
+let currentGridH = GRID_H_SMALL;
+
+// Large maps live at indices LARGE_MAP_OFFSET … (LARGE_MAP_OFFSET + N-1) in maps.js
+const LARGE_MAP_OFFSET = 6;
+// Auto-switch to the large map variant when this many players are in the lobby
+const LARGE_MAP_THRESHOLD = 5;
+const MAX_PLAYERS = 8;
+
+// Spawn positions for small maps (4 corners)
+const SMALL_SPAWNS = [
   { x: 1, y: 1 },
   { x: 13, y: 1 },
   { x: 1, y: 11 },
   { x: 13, y: 11 }
 ];
 
-// Player colors
-const COLORS = ['#FFFFFF', '#222222', '#FF3333', '#3399FF'];
-const COLOR_NAMES = ['White', 'Black', 'Red', 'Blue'];
+// Spawn positions for large maps (4 corners + 4 mid-edges)
+const LARGE_SPAWNS = [
+  { x: 1,  y: 1  },
+  { x: 21, y: 1  },
+  { x: 1,  y: 17 },
+  { x: 21, y: 17 },
+  { x: 11, y: 1  },
+  { x: 11, y: 17 },
+  { x: 1,  y: 9  },
+  { x: 21, y: 9  }
+];
 
-// Safe zone offsets from each spawn corner (L-shape: 3 tiles horiz + 3 tiles vert)
-function getSafeZoneTiles(spawn) {
+function getActiveSpawns() {
+  return currentGridW > GRID_W_SMALL ? LARGE_SPAWNS : SMALL_SPAWNS;
+}
+
+// Player colors (8 slots)
+const COLORS = ['#FFFFFF', '#222222', '#FF3333', '#3399FF', '#33CC33', '#FF9900', '#CC33FF', '#FF66CC'];
+const COLOR_NAMES = ['White', 'Black', 'Red', 'Blue', 'Green', 'Orange', 'Purple', 'Pink'];
+
+// Safe zone offsets from each spawn (L-shape: 3 tiles in primary direction + 2 tiles in secondary).
+// For corner spawns dx/dy both point inward; for mid-edge spawns one axis is 0 so
+// we clear 1 tile each side plus 2 tiles inward.
+function getSafeZoneTiles(spawn, gridW, gridH) {
   const tiles = [];
-  const dx = spawn.x === 1 ? 1 : -1;
-  const dy = spawn.y === 1 ? 1 : -1;
-  // Horizontal arm
-  for (let i = 0; i < 3; i++) tiles.push({ x: spawn.x + dx * i, y: spawn.y });
-  // Vertical arm (skip corner, already added)
-  for (let i = 1; i < 3; i++) tiles.push({ x: spawn.x, y: spawn.y + dy * i });
+  const centerX = Math.floor((gridW || GRID_W_SMALL) / 2);
+  const centerY = Math.floor((gridH || GRID_H_SMALL) / 2);
+  const dx = spawn.x < centerX ? 1 : (spawn.x > centerX ? -1 : 0);
+  const dy = spawn.y < centerY ? 1 : (spawn.y > centerY ? -1 : 0);
+
+  if (dx !== 0 && dy !== 0) {
+    // Corner spawn — original L-shape
+    for (let i = 0; i < 3; i++) tiles.push({ x: spawn.x + dx * i, y: spawn.y });
+    for (let i = 1; i < 3; i++) tiles.push({ x: spawn.x, y: spawn.y + dy * i });
+  } else if (dx === 0) {
+    // Top or bottom mid-edge — clear left, right, and 2 tiles inward
+    tiles.push({ x: spawn.x,     y: spawn.y });
+    tiles.push({ x: spawn.x - 1, y: spawn.y });
+    tiles.push({ x: spawn.x + 1, y: spawn.y });
+    tiles.push({ x: spawn.x,     y: spawn.y + dy });
+    tiles.push({ x: spawn.x,     y: spawn.y + dy * 2 });
+  } else {
+    // Left or right mid-edge — clear up, down, and 2 tiles inward
+    tiles.push({ x: spawn.x,          y: spawn.y });
+    tiles.push({ x: spawn.x,          y: spawn.y - 1 });
+    tiles.push({ x: spawn.x,          y: spawn.y + 1 });
+    tiles.push({ x: spawn.x + dx,     y: spawn.y });
+    tiles.push({ x: spawn.x + dx * 2, y: spawn.y });
+  }
   return tiles;
 }
 
@@ -161,13 +211,17 @@ function broadcastLobbyState() {
   const waitingList = waitingOrder.map(id => ({
     id, name: waitingPlayers[id].name, sprite: waitingPlayers[id].sprite || null
   }));
+  const usingLargeMaps = playerOrder.length >= LARGE_MAP_THRESHOLD;
   const msg = JSON.stringify({
     type: 'lobby',
     players: playerList,
     waiting: waitingList,
-    maps: maps.map((m, i) => ({ index: i, name: m.name, description: m.description })),
+    // Only expose the base (small) maps for selection — large variants are auto-applied
+    maps: maps.slice(0, LARGE_MAP_OFFSET).map((m, i) => ({ index: i, name: m.name, description: m.description })),
     selectedMap,
-    itemDropRate: Math.round(itemDropRate * 100)
+    itemDropRate: Math.round(itemDropRate * 100),
+    usingLargeMaps,
+    maxPlayers: MAX_PLAYERS
   });
   // Send lobby state to lobby players and waiting spectators — NOT to active game players
   wss.clients.forEach(client => {
@@ -217,19 +271,37 @@ function getGameState() {
   return state;
 }
 
+// Returns the map index to actually use, upgrading to the large variant when 5+ players
+function getEffectiveMapIndex() {
+  if (playerOrder.length >= LARGE_MAP_THRESHOLD) {
+    return selectedMap + LARGE_MAP_OFFSET;
+  }
+  return selectedMap;
+}
+
 // --- Map Generation ---
 function generateGrid(mapIndex) {
   const mapDef = maps[mapIndex];
+  const gridH = mapDef.layout.length;
+  const gridW = mapDef.layout[0].split(' ').length;
+
+  // Update runtime grid dimensions
+  currentGridH = gridH;
+  currentGridW = gridW;
+
+  const spawns = gridW > GRID_W_SMALL ? LARGE_SPAWNS : SMALL_SPAWNS;
   const newGrid = [];
   const safeSet = new Set();
-  SPAWNS.forEach(s => {
-    getSafeZoneTiles(s).forEach(t => safeSet.add(`${t.x},${t.y}`));
-  });
+  for (const s of spawns) {
+    for (const t of getSafeZoneTiles(s, gridW, gridH)) {
+      safeSet.add(`${t.x},${t.y}`);
+    }
+  }
 
-  for (let y = 0; y < GRID_H; y++) {
+  for (let y = 0; y < gridH; y++) {
     const row = mapDef.layout[y].split(' ');
     const gridRow = [];
-    for (let x = 0; x < GRID_W; x++) {
+    for (let x = 0; x < gridW; x++) {
       const tile = row[x];
       if (tile === 'W') {
         gridRow.push('W');
@@ -275,18 +347,20 @@ function applyRandomCurse(player) {
 function startGame() {
   readySet.clear();
   lobby = false;
-  grid = generateGrid(selectedMap);
+  grid = generateGrid(getEffectiveMapIndex()); // sets currentGridW / currentGridH
   gridDirty = true;
   bombs = [];
   explosions = [];
   powerups = [];
   kickedBombs = [];
 
+  const spawns = getActiveSpawns();
+
   // Reset players for new round
   let i = 0;
-  playerOrder.forEach(id => {
+  for (const id of playerOrder) {
     const p = players[id];
-    const spawn = SPAWNS[i];
+    const spawn = spawns[i] || spawns[0];
     p.x = spawn.x;
     p.y = spawn.y;
     p.alive = true;
@@ -306,9 +380,10 @@ function startGame() {
     p.inputQueue = [];
     p.autoBombCooldown = 0;
     i++;
-  });
+  }
 
-  broadcast({ type: 'gameStart', map: maps[selectedMap].name });
+  const effectiveIdx = getEffectiveMapIndex();
+  broadcast({ type: 'gameStart', map: maps[effectiveIdx].name, gridW: currentGridW, gridH: currentGridH });
   lastTick = Date.now();
   if (gameLoopInterval) clearInterval(gameLoopInterval);
   gameLoopInterval = setInterval(gameTick, TICK_MS);
@@ -407,7 +482,7 @@ function gameTickInner() {
         const nx = p.x + dx;
         const ny = p.y + dy;
 
-        if (nx >= 0 && nx < GRID_W && ny >= 0 && ny < GRID_H) {
+        if (nx >= 0 && nx < currentGridW && ny >= 0 && ny < currentGridH) {
           const tile = grid[ny][nx];
           const hasBomb = bombs.some(b => b.x === nx && b.y === ny);
 
@@ -466,7 +541,7 @@ function gameTickInner() {
 
     // Pre-check BEFORE advancing: if the next tile is already blocked, stop immediately.
     // This prevents the bomb from visually sliding toward an obstacle — it just stays put.
-    const hitsWall = nx < 0 || nx >= GRID_W || ny < 0 || ny >= GRID_H ||
+    const hitsWall = nx < 0 || nx >= currentGridW || ny < 0 || ny >= currentGridH ||
         grid[ny][nx] === 'W' || grid[ny][nx] === 'B';
     const hitsBomb = bombs.some(b => b !== kb.bomb && b.x === nx && b.y === ny);
     const hitsPlayer = playerOrder.some(id => {
@@ -572,7 +647,7 @@ function explodeBomb(index) {
     for (let i = 1; i <= range; i++) {
       const ex = bomb.x + d.dx * i;
       const ey = bomb.y + d.dy * i;
-      if (ex < 0 || ex >= GRID_W || ey < 0 || ey >= GRID_H) break;
+      if (ex < 0 || ex >= currentGridW || ey < 0 || ey >= currentGridH) break;
       if (grid[ey][ex] === 'W') break;
       if (grid[ey][ex] === 'B') {
         // Destroy soft block
@@ -636,10 +711,11 @@ function promoteWaiterMidGame() {
   const wp = waitingPlayers[wId];
 
   // Pick a colorIndex / spawn that no current active player is using
+  const activeSpawns = getActiveSpawns();
   const usedColorIndices = new Set(playerOrder.map(id => players[id].colorIndex));
   let colorIndex = 0;
-  while (usedColorIndices.has(colorIndex) && colorIndex < SPAWNS.length) colorIndex++;
-  const spawn = SPAWNS[colorIndex] || SPAWNS[0];
+  while (usedColorIndices.has(colorIndex) && colorIndex < activeSpawns.length) colorIndex++;
+  const spawn = activeSpawns[colorIndex] || activeSpawns[0];
 
   players[wId] = {
     name: wp.name, color: COLORS[colorIndex], colorIndex,
@@ -698,8 +774,8 @@ function endRound() {
     lobby = true;
     roundEndTimer = null;
 
-    // Promote waiting players into empty active slots (up to 4 total)
-    while (waitingOrder.length > 0 && playerOrder.length < 4) {
+    // Promote waiting players into empty active slots (up to MAX_PLAYERS total)
+    while (waitingOrder.length > 0 && playerOrder.length < MAX_PLAYERS) {
       const wId = waitingOrder.shift();
       const wp = waitingPlayers[wId];
       const colorIndex = playerOrder.length;
@@ -771,8 +847,8 @@ wss.on('connection', (ws) => {
       }
 
       // Normal lobby join
-      if (playerOrder.length >= 4) {
-        ws.send(JSON.stringify({ type: 'error', message: 'Game is full (max 4 players)' }));
+      if (playerOrder.length >= MAX_PLAYERS) {
+        ws.send(JSON.stringify({ type: 'error', message: `Game is full (max ${MAX_PLAYERS} players)` }));
         return;
       }
       const colorIndex = playerOrder.length;
@@ -789,11 +865,12 @@ wss.on('connection', (ws) => {
       playerOrder.push(playerId);
       if (!stats[playerId]) stats[playerId] = { wins: 0, score: 0 };
       ws.send(JSON.stringify({ type: 'joined', playerId, colorIndex }));
-      broadcastLobbyState();
+      broadcastLobbyState(); // includes usingLargeMaps flag based on new count
     }
 
     if (msg.type === 'selectMap') {
-      if (msg.index >= 0 && msg.index < maps.length) {
+      // Only allow selecting base (small) map indices — large variant is auto-applied
+      if (msg.index >= 0 && msg.index < LARGE_MAP_OFFSET) {
         selectedMap = msg.index;
         broadcastLobbyState();
       }

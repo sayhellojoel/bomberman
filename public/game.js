@@ -1,7 +1,7 @@
 // game.js — Bomberman client: input handling, WebSocket communication, Canvas rendering
 
-const GRID_W = 15;
-const GRID_H = 13;
+let GRID_W = 15;
+let GRID_H = 13;
 const TILE = 40; // base tile size, will scale
 
 let ws = null;
@@ -228,6 +228,8 @@ function handleMessage(msg) {
 
     case 'gameStart':
       inLobby = false;
+      if (msg.gridW) GRID_W = msg.gridW;
+      if (msg.gridH) GRID_H = msg.gridH;
       lobbyDiv.style.display = 'none';
       gameDiv.style.display = 'grid';
       roundEndDiv.style.display = 'none';
@@ -244,6 +246,16 @@ function handleMessage(msg) {
     case 'gameState': {
       // Grid is only sent when it changes — preserve the last known grid otherwise
       if (!msg.grid && gameState) msg.grid = gameState.grid;
+      // Sync grid dimensions if a new grid arrived with different size
+      if (msg.grid && msg.grid.length > 0) {
+        const newH = msg.grid.length;
+        const newW = msg.grid[0].length;
+        if (newH !== GRID_H || newW !== GRID_W) {
+          GRID_H = newH;
+          GRID_W = newW;
+          resizeCanvas();
+        }
+      }
       // Detect local player death
       const prevMe = gameState && myId ? gameState.players.find(p => p.id === myId) : null;
       const nextMe = myId ? msg.players.find(p => p.id === myId) : null;
@@ -328,6 +340,21 @@ function updateLobbyUI(data) {
     ).join('');
   }
   mapSelect.value = data.selectedMap;
+
+  // Large-map badge
+  let largeMapNote = document.getElementById('large-map-note');
+  if (!largeMapNote) {
+    largeMapNote = document.createElement('p');
+    largeMapNote.id = 'large-map-note';
+    largeMapNote.className = 'large-map-note';
+    mapSelect.closest('label').insertAdjacentElement('afterend', largeMapNote);
+  }
+  if (data.usingLargeMaps) {
+    largeMapNote.textContent = '⬆ 5+ players detected — using expanded maps (23×19) with 8 spawn points';
+    largeMapNote.style.display = 'block';
+  } else {
+    largeMapNote.style.display = 'none';
+  }
 
   // Drop rate
   dropRate.value = data.itemDropRate;
