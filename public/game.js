@@ -209,9 +209,31 @@ function handleMessage(msg) {
       lobbyInfo.style.display = 'block';
       break;
 
+    case 'midgameJoin':
+      // We were spectating and got promoted into the live game mid-round.
+      // Also ensure lobbyInfo is shown for when this round ends and we return to lobby.
+      myId = msg.playerId;
+      myColorIndex = msg.colorIndex;
+      isSpectating = false;
+      inLobby = false;
+      gameDiv.classList.remove('spectating');
+      document.getElementById('spectator-banner').style.display = 'none';
+      document.querySelector('.lobby-options').style.display = '';
+      startBtn.style.display = '';
+      joinSection.style.display = 'none';
+      lobbyInfo.style.display = 'block';
+      gameDiv.style.display = 'grid';
+      startTimer();
+      break;
+
     case 'lobby':
       inLobby = true;
       stopTimer();
+      // Defensive cleanup: clear any keyboard repeat state left over from the game
+      clearInterval(moveInterval);
+      moveInterval = null;
+      for (const k of Object.keys(keysDown)) delete keysDown[k];
+
       if (isSpectating) {
         // Still in queue — show waiting view instead of active lobby
         gameDiv.style.display = 'none';
@@ -222,7 +244,27 @@ function handleMessage(msg) {
         lobbyDiv.style.display = 'block';
         gameDiv.style.display = 'none';
         roundEndDiv.style.display = 'none';
-        updateLobbyUI(msg);
+
+        const meInList = myId && msg.players.some(p => p.id === myId);
+        if (!myId || !meInList) {
+          // Player was never joined, or their session was dropped server-side
+          // (e.g. a WebSocket reconnect during the round removed them from playerOrder).
+          // Return them to the join form so they can re-enter cleanly.
+          joinSection.style.display = 'block';
+          lobbyInfo.style.display = 'none';
+          if (myId && !meInList) {
+            // Reset so the joinBtn handler re-enables correctly
+            joinBtn.disabled = false;
+            joinBtn.textContent = 'Join Game';
+            myId = null;
+          }
+        } else {
+          // Normal return-to-lobby after a round — make sure the lobby room is visible.
+          // (Guards against the spectator-promote path which skips the 'joined' handler.)
+          joinSection.style.display = 'none';
+          lobbyInfo.style.display = 'block';
+          updateLobbyUI(msg);
+        }
       }
       renderLobbyChat();
       break;
@@ -274,18 +316,6 @@ function handleMessage(msg) {
 
     case 'roundEnd':
       showRoundEnd(msg);
-      break;
-
-    case 'midgameJoin':
-      // We were spectating and got promoted into the live game mid-round
-      myId = msg.playerId;
-      myColorIndex = msg.colorIndex;
-      isSpectating = false;
-      inLobby = false;
-      gameDiv.classList.remove('spectating');
-      document.getElementById('spectator-banner').style.display = 'none';
-      gameDiv.style.display = 'grid';
-      startTimer();
       break;
 
     case 'queueUpdate':
