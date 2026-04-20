@@ -224,6 +224,7 @@ function handleMessage(msg) {
         roundEndDiv.style.display = 'none';
         updateLobbyUI(msg);
       }
+      renderLobbyChat();
       break;
 
     case 'gameStart':
@@ -241,6 +242,7 @@ function handleMessage(msg) {
         gameDiv.classList.remove('spectating');
         startTimer();
       }
+      renderGameChat();
       break;
 
     case 'gameState': {
@@ -289,6 +291,15 @@ function handleMessage(msg) {
     case 'queueUpdate':
       // Still waiting — queue position changed (someone ahead of us left or got promoted)
       updateSpectatorBanner(msg.queuePosition);
+      break;
+
+    case 'chat':
+      chatHistory.push(msg);
+      if (inLobby) {
+        renderLobbyChat();
+      } else {
+        renderGameChat();
+      }
       break;
 
     case 'error':
@@ -926,6 +937,10 @@ const keysDown = {};
 let moveInterval = null;
 
 document.addEventListener('keydown', (e) => {
+  // Don't intercept keypresses when any chat input is focused
+  if (document.activeElement === document.getElementById('game-chat-input') ||
+      document.activeElement === document.getElementById('lobby-chat-input')) return;
+
   if (inLobby) {
     if (e.key === 'Enter' && document.activeElement === nameInput) {
       joinBtn.click();
@@ -1242,6 +1257,88 @@ startBtn.addEventListener('click', () => {
 // Leave Lobby — disconnects and returns to the join screen
 document.getElementById('leaveLobbyBtn').addEventListener('click', () => {
   window.location.reload();
+});
+
+// --- Chat ---
+const chatHistory = [];
+
+function chatMsgHtml(msg) {
+  const avatar = msg.sprite
+    ? `<img class="chat-msg-avatar" src="8%20bit%20originals/${encodeURIComponent(msg.sprite)}" alt="">`
+    : `<div class="chat-msg-avatar-dot" style="background:${msg.color || '#888'}"></div>`;
+  return `<div class="chat-msg">
+    ${avatar}
+    <span class="chat-msg-name" style="color:${msg.color || '#aaa'}">${escapeHtml(msg.name)}:</span>
+    <span class="chat-msg-text">${escapeHtml(msg.text)}</span>
+  </div>`;
+}
+
+function renderLobbyChat() {
+  const container = document.getElementById('lobby-chat-messages');
+  if (!container) return;
+  const wasAtBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 40;
+  container.innerHTML = chatHistory.map(chatMsgHtml).join('');
+  if (wasAtBottom || container.scrollHeight === container.clientHeight) {
+    container.scrollTop = container.scrollHeight;
+  }
+}
+
+function renderGameChat() {
+  const container = document.getElementById('game-chat-messages');
+  if (!container) return;
+  const recent = chatHistory.slice(-5);
+  container.innerHTML = recent.map(chatMsgHtml).join('');
+}
+
+function sendChat(text) {
+  text = (text || '').trim();
+  if (!text || !myId) return;
+  send({ type: 'chat', text });
+}
+
+// Lobby chat input
+const lobbyChatInput = document.getElementById('lobby-chat-input');
+const lobbyChatSend = document.getElementById('lobby-chat-send');
+
+function submitLobbyChat() {
+  if (!lobbyChatInput.value.trim()) return;
+  sendChat(lobbyChatInput.value);
+  lobbyChatInput.value = '';
+}
+
+lobbyChatSend.addEventListener('click', submitLobbyChat);
+lobbyChatInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); submitLobbyChat(); }
+  e.stopPropagation();
+});
+
+// Game chat
+const gameChatBtn = document.getElementById('game-chat-btn');
+const gameChatInputRow = document.getElementById('game-chat-input-row');
+const gameChatInput = document.getElementById('game-chat-input');
+const gameChatSend = document.getElementById('game-chat-send');
+
+function toggleGameChatInput(forceOpen) {
+  const showing = gameChatInputRow.style.display !== 'none';
+  const open = forceOpen !== undefined ? forceOpen : !showing;
+  gameChatInputRow.style.display = open ? 'flex' : 'none';
+  if (open) gameChatInput.focus();
+}
+
+function submitGameChat() {
+  if (!gameChatInput.value.trim()) return;
+  sendChat(gameChatInput.value);
+  gameChatInput.value = '';
+  toggleGameChatInput(false);
+}
+
+addTapHandler(gameChatBtn, () => toggleGameChatInput());
+addTapHandler(gameChatSend, submitGameChat);
+
+gameChatInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); submitGameChat(); }
+  if (e.key === 'Escape') { toggleGameChatInput(false); }
+  e.stopPropagation();
 });
 
 // Start render loop

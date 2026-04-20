@@ -26,6 +26,13 @@
       <h2>Lobby</h2>
       <div id="playerList"></div>
       <div id="waiting-queue" style="display:none;"></div>
+      <div id="lobby-chat">
+        <div id="lobby-chat-messages"></div>
+        <div id="lobby-chat-input-row">
+          <input type="text" id="lobby-chat-input" placeholder="Say something..." maxlength="200" autocomplete="off">
+          <button id="lobby-chat-send">Send</button>
+        </div>
+      </div>
       <div class="lobby-options">
         <label class="lobby-option-row">
           <span class="option-label">Map</span>
@@ -57,6 +64,14 @@
     <!-- Center: header + canvas -->
     <div id="game-main">
       <div id="spectator-banner" style="display:none;"></div>
+      <div id="game-chat-overlay">
+        <div id="game-chat-messages"></div>
+        <div id="game-chat-input-row" style="display:none;">
+          <input type="text" id="game-chat-input" placeholder="Message..." maxlength="200" autocomplete="off">
+          <button id="game-chat-send">↩</button>
+        </div>
+        <button id="game-chat-btn">💬</button>
+      </div>
       <div id="died-overlay" style="display:none;">
         <div id="died-msg">😎 You died!</div>
         <div id="died-winner"></div>

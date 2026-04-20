@@ -900,6 +900,24 @@ wss.on('connection', (ws) => {
       broadcastLobbyState();
     }
 
+    if (msg.type === 'chat' && playerId) {
+      const sender = players[playerId] || waitingPlayers[playerId];
+      if (sender) {
+        const text = String(msg.text || '').trim().slice(0, 200);
+        if (text) {
+          broadcast({
+            type: 'chat',
+            playerId,
+            name: sender.name,
+            sprite: sender.sprite || null,
+            color: sender.color || '#888',
+            text,
+            ts: Date.now()
+          });
+        }
+      }
+    }
+
     // In-game inputs
     if (msg.type === 'input' && playerId && players[playerId] && !lobby) {
       const p = players[playerId];
