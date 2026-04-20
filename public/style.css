@@ -783,6 +783,91 @@ button:active { transform: scale(0.95); }
 }
 
 /* =====================
+   D-PAD (alternate mobile control)
+   ===================== */
+#dpad {
+  display: grid;
+  grid-template-columns: 50px 50px 50px;
+  grid-template-rows: 50px 50px 50px;
+  gap: 6px;
+  touch-action: none;
+}
+
+/* Cross-shape layout: up at top-center, left/right at middle, down at bottom-center */
+#dpad .dpad-btn[data-dir="up"]    { grid-column: 2; grid-row: 1; }
+#dpad .dpad-btn[data-dir="left"]  { grid-column: 1; grid-row: 2; }
+#dpad .dpad-btn[data-dir="right"] { grid-column: 3; grid-row: 2; }
+#dpad .dpad-btn[data-dir="down"]  { grid-column: 2; grid-row: 3; }
+
+.dpad-btn {
+  background: rgba(255, 255, 255, 0.08);
+  border: 2px solid rgba(255, 255, 255, 0.22);
+  border-radius: 10px;
+  color: #eee;
+  font-size: 1.3rem;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: none;
+}
+
+.dpad-btn.dpad-active,
+.dpad-btn:active {
+  background: rgba(255, 107, 53, 0.45);
+  border-color: #ff6b35;
+  color: #fff;
+  box-shadow: 0 0 10px rgba(255, 107, 53, 0.45);
+}
+
+/* Slightly larger D-pad on portrait where we have more horizontal space */
+@media (pointer: coarse) and (orientation: portrait),
+       (max-width: 600px) and (orientation: portrait) {
+  #dpad {
+    grid-template-columns: 56px 56px 56px;
+    grid-template-rows: 56px 56px 56px;
+  }
+  .dpad-btn { font-size: 1.5rem; }
+}
+
+/* =====================
+   CONTROLS TOGGLE (Lobby → Controls)
+   ===================== */
+/* Mobile-only rows — hidden on desktop/no-touch devices. */
+.touch-only { display: none !important; }
+@media (pointer: coarse) {
+  .touch-only { display: flex !important; }
+}
+
+.control-type-toggle {
+  display: flex;
+  gap: 6px;
+  width: 100%;
+}
+
+.ctl-btn {
+  flex: 1;
+  padding: 8px 12px;
+  font-size: 0.95rem;
+  background: #0f0f23;
+  color: #aaa;
+  border: 1px solid #444;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.ctl-btn.ctl-active {
+  background: #ff6b35;
+  color: #fff;
+  border-color: #ff6b35;
+}
+
+/* =====================
    MOBILE PORTRAIT
    Touch devices in portrait: dpad bottom-left, bomb bottom-right
    ===================== */

@@ -143,10 +143,19 @@ document.getElementById('sprite-picker').addEventListener('touchend', (e) => {
   selectSprite(card.dataset.sprite);
 }, { passive: false });
 
-// Fetch sprite list from server and build picker
+// Fetch sprite list from server and build picker — then pre-select the last-used
+// character (if any) so a browser-level crash still lets the player rejoin with
+// one click instead of hunting through the picker again.
 fetch('/api/sprites')
   .then(r => r.json())
-  .then(sprites => buildSpritePicker(sprites))
+  .then(sprites => {
+    buildSpritePicker(sprites);
+    const saved = loadIdentity();
+    if (saved && saved.sprite && sprites.includes(saved.sprite)) {
+      selectSprite(saved.sprite);
+      if (saved.name) nameInput.value = saved.name;
+    }
+  })
   .catch(() => buildSpritePicker(['Adam.png'])); // fallback if fetch fails
 
 // --- Device ID (persistent, prevents same device joining twice) ---
@@ -159,12 +168,69 @@ function getDeviceId() {
   return id;
 }
 
+// --- Persisted identity (so WS reconnects auto-rejoin with same character) ---
+// Set once the player successfully joins (or is promoted mid-game). Cleared when
+// they explicitly leave the lobby. Used in connect() and the 'lobby' handler to
+// silently rejoin after a dropped socket, instead of booting the player back to
+// character selection.
+let hasJoinedThisSession = false;
+
+function saveIdentity(name, sprite) {
+  try {
+    localStorage.setItem('bomberman_identity', JSON.stringify({ name, sprite }));
+  } catch (e) {}
+}
+
+function loadIdentity() {
+  try {
+    const raw = localStorage.getItem('bomberman_identity');
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function sendRejoin() {
+  const saved = loadIdentity();
+  if (!saved || !saved.sprite) return false;
+  const name = saved.name || saved.sprite.replace(/\.[^.]+$/, '');
+  send({ type: 'join', name, deviceId: getDeviceId(), sprite: saved.sprite });
+  return true;
+}
+
 // --- WebSocket Connection ---
+// Used for both the initial user-driven connect (from joinBtn) and the
+// auto-retry path triggered by ws.onclose. The hasJoinedThisSession flag in
+// ws.onopen tells them apart so only reconnects auto-resume with saved identity.
 function connect() {
+  // Guard against stacking sockets: if a live socket already exists, tear it
+  // down without letting its onclose trigger yet another reconnect. Without
+  // this, clicking "Join" after a dropped round could leave multiple WebSockets
+  // open — which produced the "each subsequent game crashes in 5-10 seconds" symptom.
+  if (ws) {
+    try {
+      ws.onopen = null;
+      ws.onmessage = null;
+      ws.onclose = null;
+      ws.onerror = null;
+      if (ws.readyState === 0 || ws.readyState === 1) ws.close();
+    } catch (e) {}
+    ws = null;
+  }
+
   const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
   ws = new WebSocket(`${protocol}//${window.location.host}`);
 
-  ws.onopen = () => console.log('Connected');
+  ws.onopen = () => {
+    console.log('Connected');
+    // If we had already joined and just reconnected, silently re-identify with
+    // the saved character rather than forcing the user back to character select.
+    if (hasJoinedThisSession) {
+      // Force a fresh playerId from the server — the previous one was removed on ws.close.
+      myId = null;
+      sendRejoin();
+    }
+  };
 
   ws.onmessage = (event) => {
     const msg = JSON.parse(event.data);
@@ -175,6 +241,8 @@ function connect() {
     // Try reconnect after delay
     setTimeout(connect, 2000);
   };
+
+  ws.onerror = () => { /* silent — onclose handles reconnect */ };
 }
 
 function send(msg) {
@@ -201,6 +269,8 @@ function handleMessage(msg) {
       myId = msg.playerId;
       myColorIndex = msg.colorIndex;
       isSpectating = false;
+      hasJoinedThisSession = true;
+      saveIdentity(nameInput.value.trim() || '', selectedSprite);
       gameDiv.classList.remove('spectating');
       document.getElementById('spectator-banner').style.display = 'none';
       document.querySelector('.lobby-options').style.display = '';
@@ -216,6 +286,8 @@ function handleMessage(msg) {
       myColorIndex = msg.colorIndex;
       isSpectating = false;
       inLobby = false;
+      hasJoinedThisSession = true;
+      saveIdentity(nameInput.value.trim() || '', selectedSprite);
       gameDiv.classList.remove('spectating');
       document.getElementById('spectator-banner').style.display = 'none';
       document.querySelector('.lobby-options').style.display = '';
@@ -233,6 +305,8 @@ function handleMessage(msg) {
       clearInterval(moveInterval);
       moveInterval = null;
       for (const k of Object.keys(keysDown)) delete keysDown[k];
+      // Let touch controls reset their own repeat state (joystick / D-Pad).
+      window.dispatchEvent(new Event('bomberman:returnToLobby'));
 
       if (isSpectating) {
         // Still in queue — show waiting view instead of active lobby
@@ -246,17 +320,25 @@ function handleMessage(msg) {
         roundEndDiv.style.display = 'none';
 
         const meInList = myId && msg.players.some(p => p.id === myId);
-        if (!myId || !meInList) {
-          // Player was never joined, or their session was dropped server-side
-          // (e.g. a WebSocket reconnect during the round removed them from playerOrder).
-          // Return them to the join form so they can re-enter cleanly.
-          joinSection.style.display = 'block';
-          lobbyInfo.style.display = 'none';
-          if (myId && !meInList) {
-            // Reset so the joinBtn handler re-enables correctly
-            joinBtn.disabled = false;
-            joinBtn.textContent = 'Join Game';
+        if (!meInList) {
+          // Either we never joined, or the server dropped our session (e.g. WS
+          // reconnected during the round and the old playerId was removed).
+          if (hasJoinedThisSession && loadIdentity()) {
+            // We already picked a character this session — silently rejoin
+            // with it instead of throwing the player back to character select.
             myId = null;
+            lobbyInfo.style.display = 'block';
+            joinSection.style.display = 'none';
+            playerList.innerHTML = '<p class="waiting-label">Reconnecting…</p>';
+            sendRejoin();
+          } else {
+            joinSection.style.display = 'block';
+            lobbyInfo.style.display = 'none';
+            if (myId) {
+              joinBtn.disabled = false;
+              joinBtn.textContent = 'Join Game';
+              myId = null;
+            }
           }
         } else {
           // Normal return-to-lobby after a round — make sure the lobby room is visible.
@@ -1038,6 +1120,37 @@ function startMoveRepeat(key) {
   }, 120);
 }
 
+// --- Mobile control type (Joystick or D-Pad) ---
+// Choice is exposed to the joystick + dpad handlers below so they can no-op when
+// the other one is active. Persisted in localStorage so it survives reloads.
+let controlType = 'joystick';
+try {
+  const saved = localStorage.getItem('bomberman_control_type');
+  if (saved === 'joystick' || saved === 'dpad') controlType = saved;
+} catch (e) {}
+
+function applyControlType() {
+  const joystickEl = document.getElementById('joystick');
+  const dpadEl     = document.getElementById('dpad');
+  if (joystickEl) joystickEl.style.display = controlType === 'joystick' ? '' : 'none';
+  if (dpadEl)     dpadEl.style.display     = controlType === 'dpad'     ? '' : 'none';
+  for (const b of document.querySelectorAll('.ctl-btn')) {
+    b.classList.toggle('ctl-active', b.dataset.ctl === controlType);
+  }
+}
+
+function setControlType(type) {
+  if (type !== 'joystick' && type !== 'dpad') return;
+  controlType = type;
+  try { localStorage.setItem('bomberman_control_type', type); } catch (e) {}
+  applyControlType();
+}
+
+for (const btn of document.querySelectorAll('.ctl-btn')) {
+  btn.addEventListener('click', () => setControlType(btn.dataset.ctl));
+}
+applyControlType();
+
 // Virtual joystick (mobile)
 (function () {
   // ── Tuning constants ─────────────────────────────────────────────────────
@@ -1193,6 +1306,7 @@ function startMoveRepeat(key) {
   // Each new touch sets its own origin — "floating neutral" behaviour.
   function onTouchStart(e) {
     if (inLobby) return;
+    if (controlType !== 'joystick') return; // D-Pad is active — stay out of its way.
     e.preventDefault();
     const t = e.changedTouches[0];
     touchActive = true;
@@ -1203,6 +1317,7 @@ function startMoveRepeat(key) {
 
   function onTouchMove(e) {
     if (!touchActive || inLobby) return;
+    if (controlType !== 'joystick') return;
     e.preventDefault();
     const t = e.touches[0];
     if (!t) return;
@@ -1220,6 +1335,126 @@ function startMoveRepeat(key) {
   ctrlDpad.addEventListener('touchmove',   onTouchMove,  { passive: false });
   ctrlDpad.addEventListener('touchend',    onTouchEnd,   { passive: false });
   ctrlDpad.addEventListener('touchcancel', onTouchEnd,   { passive: false });
+}());
+
+// --- D-Pad input (alternate mobile control, selected from the lobby) ---
+// Works with multi-touch: each touch is tracked by identifier so pressing one
+// direction and then sliding the finger onto another direction button works
+// the way you'd expect on a physical d-pad.
+(function () {
+  const dpad = document.getElementById('dpad');
+  if (!dpad) return;
+  const REPEAT_MS = 150;
+
+  const activeTouches = new Map(); // touchId → direction
+  let repeatTimer = null;
+
+  function currentDir() {
+    // Most recently engaged direction wins (Map iterates in insertion order).
+    let dir = null;
+    for (const [, d] of activeTouches) dir = d;
+    return dir;
+  }
+
+  function ensureRepeat() {
+    if (repeatTimer) return;
+    repeatTimer = setInterval(() => {
+      const dir = currentDir();
+      if (!dir) { stopRepeat(); return; }
+      if (!inLobby) send({ type: 'input', action: 'move', dir });
+    }, REPEAT_MS);
+  }
+
+  function stopRepeat() {
+    if (repeatTimer) { clearInterval(repeatTimer); repeatTimer = null; }
+  }
+
+  function highlight(dir, on) {
+    const btn = dpad.querySelector(`.dpad-btn[data-dir="${dir}"]`);
+    if (btn) btn.classList.toggle('dpad-active', on);
+  }
+
+  function startDir(id, dir) {
+    const prior = activeTouches.get(id);
+    if (prior === dir) return;
+    if (prior) {
+      // Direction changed for this touch — drop highlight if no other touch holds it.
+      activeTouches.delete(id);
+      let stillHeld = false;
+      for (const [, d] of activeTouches) if (d === prior) { stillHeld = true; break; }
+      if (!stillHeld) highlight(prior, false);
+    }
+    activeTouches.set(id, dir);
+    highlight(dir, true);
+    if (!inLobby) send({ type: 'input', action: 'move', dir });
+    ensureRepeat();
+  }
+
+  function endTouch(id) {
+    const dir = activeTouches.get(id);
+    if (!dir) return;
+    activeTouches.delete(id);
+    let stillHeld = false;
+    for (const [, d] of activeTouches) if (d === dir) { stillHeld = true; break; }
+    if (!stillHeld) highlight(dir, false);
+    if (activeTouches.size === 0) stopRepeat();
+  }
+
+  function dirAt(x, y) {
+    const el = document.elementFromPoint(x, y);
+    const btn = el && el.closest ? el.closest('.dpad-btn') : null;
+    return btn && dpad.contains(btn) ? btn.dataset.dir : null;
+  }
+
+  dpad.addEventListener('touchstart', (e) => {
+    if (controlType !== 'dpad') return;
+    e.preventDefault();
+    for (const t of e.changedTouches) {
+      const dir = dirAt(t.clientX, t.clientY);
+      if (dir) startDir(t.identifier, dir);
+    }
+  }, { passive: false });
+
+  dpad.addEventListener('touchmove', (e) => {
+    if (controlType !== 'dpad') return;
+    e.preventDefault();
+    for (const t of e.changedTouches) {
+      const dir = dirAt(t.clientX, t.clientY);
+      if (dir) startDir(t.identifier, dir);
+      else if (activeTouches.has(t.identifier)) endTouch(t.identifier); // slid off the pad
+    }
+  }, { passive: false });
+
+  const endHandler = (e) => {
+    if (controlType !== 'dpad') return;
+    e.preventDefault();
+    for (const t of e.changedTouches) endTouch(t.identifier);
+  };
+
+  dpad.addEventListener('touchend',    endHandler, { passive: false });
+  dpad.addEventListener('touchcancel', endHandler, { passive: false });
+
+  // Mouse support for desktop testers who flip the setting manually.
+  let mouseHeld = false;
+  dpad.addEventListener('mousedown', (e) => {
+    if (controlType !== 'dpad') return;
+    const btn = e.target.closest && e.target.closest('.dpad-btn');
+    if (!btn) return;
+    e.preventDefault();
+    mouseHeld = true;
+    startDir('mouse', btn.dataset.dir);
+  });
+  window.addEventListener('mouseup', () => {
+    if (!mouseHeld) return;
+    mouseHeld = false;
+    endTouch('mouse');
+  });
+
+  // Hard-stop any in-flight movement when the player returns to the lobby
+  // (mirrors the defensive keyboard cleanup in the 'lobby' handler).
+  window.addEventListener('bomberman:returnToLobby', () => {
+    for (const id of Array.from(activeTouches.keys())) endTouch(id);
+  });
 }());
 
 // Bomb button: touchstart for instant response; touchend as fallback if touchstart was swallowed
@@ -1284,7 +1519,11 @@ startBtn.addEventListener('click', () => {
   send({ type: 'ready' });
 });
 
-// Leave Lobby — disconnects and returns to the join screen
+// Leave Lobby — disconnects and returns to the join screen. We intentionally
+// leave the saved identity in localStorage so the player's character stays
+// preselected on the next page load; auto-rejoin is separately gated by
+// hasJoinedThisSession, which is reset on reload, so there's no risk of
+// auto-rejoining after an intentional exit.
 document.getElementById('leaveLobbyBtn').addEventListener('click', () => {
   window.location.reload();
 });

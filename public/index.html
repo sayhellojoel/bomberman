@@ -42,6 +42,14 @@
           <span class="option-label">Item Drop Rate <span id="dropRateVal">30%</span></span>
           <input type="range" id="dropRate" min="0" max="100" value="30">
         </label>
+        <!-- Mobile-only: choose between joystick and D-Pad for in-game movement -->
+        <div class="lobby-option-row touch-only" id="control-type-row">
+          <span class="option-label">Controls</span>
+          <div class="control-type-toggle">
+            <button type="button" class="ctl-btn" data-ctl="joystick">Joystick</button>
+            <button type="button" class="ctl-btn" data-ctl="dpad">D-Pad</button>
+          </div>
+        </div>
       </div>
       <button id="startBtn" disabled>Start Game (need 2+ players)</button>
       <button id="leaveLobbyBtn">Leave Lobby</button>
@@ -51,13 +59,20 @@
   <!-- Game Screen -->
   <div id="game" style="display:none;">
 
-    <!-- Left panel: Virtual joystick (portrait=bottom-left, landscape=left side) -->
+    <!-- Left panel: movement controls. One of { joystick, dpad } is visible at a
+         time, controlled by the Lobby → Controls setting (mobile only). -->
     <div id="game-ctrl-dpad">
       <div id="joystick">
         <div id="joystick-base" data-zone="dead" data-dir="">
           <div id="joystick-ring"></div>
           <div id="joystick-knob"></div>
         </div>
+      </div>
+      <div id="dpad" style="display:none;">
+        <button type="button" class="dpad-btn" data-dir="up"    aria-label="Up">▲</button>
+        <button type="button" class="dpad-btn" data-dir="left"  aria-label="Left">◀</button>
+        <button type="button" class="dpad-btn" data-dir="right" aria-label="Right">▶</button>
+        <button type="button" class="dpad-btn" data-dir="down"  aria-label="Down">▼</button>
       </div>
     </div>
 
