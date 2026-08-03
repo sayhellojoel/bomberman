@@ -1,6 +1,15 @@
 // sw.js — Basic service worker for PWA installability
-const CACHE_NAME = 'bomberman-v4';
-const ASSETS = ['/', '/index.html', '/game.js', '/style.css', '/manifest.json'];
+//
+// __BUILD__ is substituted by the server with a hash of the client files, so
+// every build gets its own cache and the activate handler below deletes the
+// previous one. That's what stops an installed PWA booting yesterday's code.
+// If this file is ever served unsubstituted the name is simply constant.
+const CACHE_NAME = 'bomberman-__BUILD__';
+
+// Offline fallback only. game.js and style.css are deliberately absent: they're
+// requested with a ?v=<build> query, so a precached copy under the bare path
+// could only ever be the wrong one. They're network-first below in any case.
+const ASSETS = ['/', '/index.html', '/manifest.json'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(ASSETS)));

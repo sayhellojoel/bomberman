@@ -2,6 +2,7 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { WebSocketServer } = require('ws');
 const maps = require('./maps');
 
@@ -131,6 +132,36 @@ const SPRITES_DIR = path.join(__dirname, 'public', '8 bit originals');
 const ICONS_DIR  = path.join(__dirname, 'public', 'Icons');
 const IMAGE_EXTS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp']);
 
+// --- Build manifest ---------------------------------------------------------
+// A short content hash of every client file. index.html and sw.js both carry a
+// literal __BUILD__ placeholder that gets substituted at serve time, so:
+//
+//   • index.html asks for game.js?v=<build> — a new build is a *different URL*,
+//     which no browser cache, service worker cache or proxy can serve stale;
+//   • sw.js names its cache bomberman-<build>, so the existing activate handler
+//     wipes the previous build's cache the moment a new one lands.
+//
+// It's hashed from file contents rather than a timestamp, so it only changes
+// when something actually changed. Recomputed on demand (1s memo) so editing a
+// file and reloading picks the change up without restarting the server.
+const BUILD_FILES = ['index.html', 'game.js', 'style.css', 'sw.js', 'manifest.json'];
+let buildIdCache = { value: null, at: 0 };
+
+function getBuildId() {
+  const now = Date.now();
+  if (buildIdCache.value && now - buildIdCache.at < 1000) return buildIdCache.value;
+  const hash = crypto.createHash('sha1');
+  for (const name of BUILD_FILES) {
+    try {
+      hash.update(fs.readFileSync(path.join(__dirname, 'public', name)));
+    } catch (e) {
+      hash.update(name); // missing file still contributes, so it's a distinct build
+    }
+  }
+  buildIdCache = { value: hash.digest('hex').slice(0, 10), at: now };
+  return buildIdCache.value;
+}
+
 function getAvailableSprites() {
   try {
     return fs.readdirSync(SPRITES_DIR).filter(f => IMAGE_EXTS.has(path.extname(f).toLowerCase()));
@@ -175,17 +206,55 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // Current build id — lets a client confirm which version it's actually running
+  if (decodedUrl === '/api/version') {
+    res.writeHead(200, {
+      'Content-Type': 'application/json',
+      'Cache-Control': 'no-store',
+      'ngrok-skip-browser-warning': 'true'
+    });
+    res.end(JSON.stringify({ build: getBuildId() }));
+    return;
+  }
+
   let filePath = path.join(__dirname, 'public', decodedUrl === '/' ? 'index.html' : decodedUrl);
   const ext = path.extname(filePath);
   const contentType = mimeTypes[ext] || 'application/octet-stream';
+  const isShell = decodedUrl === '/' || /\.(html|js|css|json)$/.test(decodedUrl);
+
   fs.readFile(filePath, (err, data) => {
     if (err) {
       res.writeHead(404, { 'ngrok-skip-browser-warning': 'true' });
       res.end('Not found');
-    } else {
-      res.writeHead(200, { 'Content-Type': contentType, 'ngrok-skip-browser-warning': 'true' });
-      res.end(data);
+      return;
     }
+
+    // index.html and sw.js carry __BUILD__ placeholders — stamp them.
+    const base = path.basename(filePath);
+    if (base === 'index.html' || base === 'sw.js') {
+      data = Buffer.from(data.toString('utf8').split('__BUILD__').join(getBuildId()), 'utf8');
+    }
+
+    // ETag over what's actually being sent (post-substitution), so a new build
+    // is a genuinely new entity and revalidation can't hand back stale bytes.
+    const etag = '"' + crypto.createHash('sha1').update(data).digest('hex').slice(0, 16) + '"';
+    if (req.headers['if-none-match'] === etag) {
+      res.writeHead(304, { ETag: etag, 'Cache-Control': 'no-cache', 'ngrok-skip-browser-warning': 'true' });
+      res.end();
+      return;
+    }
+
+    res.writeHead(200, {
+      'Content-Type': contentType,
+      ETag: etag,
+      // no-cache = "keep a copy, but revalidate every time". With the ETag above
+      // that's a cheap 304 when nothing changed, and never a stale app shell.
+      // Images are the bulk of the bytes and change rarely, so they're allowed a
+      // short window; the service worker's per-build cache name handles the rest.
+      'Cache-Control': isShell ? 'no-cache' : 'public, max-age=300',
+      'ngrok-skip-browser-warning': 'true'
+    });
+    res.end(data);
   });
 });
 

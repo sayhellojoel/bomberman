@@ -7,8 +7,11 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="theme-color" content="#1a1a2e">
   <title>Bomberman</title>
-  <link rel="manifest" href="manifest.json">
-  <link rel="stylesheet" href="style.css">
+  <!-- ?v=__BUILD__ is substituted by the server with a hash of the client files.
+       A new build is therefore a new URL, which no cache can answer stale.
+       Served unstamped (e.g. straight off disk) the query is simply ignored. -->
+  <link rel="manifest" href="manifest.json?v=__BUILD__">
+  <link rel="stylesheet" href="style.css?v=__BUILD__">
 </head>
 <body>
   <!-- Lobby Screen -->
@@ -136,10 +139,16 @@
     </div>
   </div>
 
-  <script src="game.js"></script>
+  <script src="game.js?v=__BUILD__"></script>
   <script>
+    window.BUILD = '__BUILD__';
+    console.log('[bomberman] build', window.BUILD);
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('sw.js').catch(() => {});
+      // Registering the versioned URL means the browser sees a byte-different
+      // worker on every build and runs its update flow instead of reusing the
+      // installed one. sw.js itself skipWaiting()s, so the new build takes over
+      // immediately rather than waiting for every tab to close.
+      navigator.serviceWorker.register('sw.js?v=__BUILD__').catch(() => {});
     }
   </script>
 </body>
