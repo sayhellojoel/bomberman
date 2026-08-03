@@ -1158,23 +1158,19 @@ applyControlType();
 // removed on lift, so the next touch builds a fresh joystick somewhere else.
 //
 // The ring is decoration, not a boundary — pushing past it just keeps moving.
-// Direction is whichever quadrant the thumb sits in relative to neutral, and it
-// can be changed mid-gesture without lifting. The one guard is SWITCH_RATIO:
-// because it compares the two axes as a *ratio*, the sideways distance needed
-// to flip axis grows with how far the thumb is pushed. Near neutral a small
-// slide switches direction; pushed hard up, you have to drift back toward the
-// centre first. That's the forgiving-dead-zone feel without a hard boundary.
+//
+// Strictly four directions, nothing diagonal. Whichever quadrant the thumb is
+// in is the direction, and crossing a quadrant boundary switches immediately —
+// no guard band, and no need to come back toward neutral first. Sliding from
+// straight up over to the right starts moving right the moment the thumb
+// passes the diagonal. The knob matches: it sits at the centre or at one of
+// four cardinal slots, never in a corner, so what you see is what's being sent.
 (function () {
   // ── Tuning constants ─────────────────────────────────────────────────────
   const DEAD_ZONE    = 20;   // px around neutral — no movement, direction released
-  const KNOB_TRAVEL  = 46;   // px — how far the knob slides before it pins (visual only)
+  const KNOB_OFFSET  = 35;   // px from centre to a cardinal slot (visual only)
   const REPEAT_DELAY = 150;  // ms a direction must be held before it auto-repeats
   const REPEAT_MS    = 150;  // ms between auto-repeats
-  // tan(54.5°) ≈ 1.4 — the new axis must beat the current one by this much to win,
-  // i.e. a ~9° guard band either side of the 45° quadrant boundary. Enough to stop
-  // the direction flickering when the thumb sits on a diagonal, small enough that
-  // a normal thumb arc into the next quadrant still switches without effort.
-  const SWITCH_RATIO = 1.4;
 
   const joystickRoot  = document.getElementById('joystick');
   const joystickZone  = document.getElementById('joystick-zone');
@@ -1193,24 +1189,13 @@ applyControlType();
 
   // ── Direction snapping ────────────────────────────────────────────────────
 
+  // Pure quadrant snap — the only thing that matters is which of the four
+  // wedges the thumb is in. No memory of the previous direction, so a switch
+  // takes effect the instant the diagonal is crossed.
   function snap4(dx, dy) {
     return Math.abs(dx) >= Math.abs(dy)
       ? (dx > 0 ? 'right' : 'left')
       : (dy > 0 ? 'down'  : 'up');
-  }
-
-  // Same as snap4, but the perpendicular axis has to clearly win before we
-  // switch off the direction already being held.
-  function snapGuarded(dx, dy, current) {
-    if (!current) return snap4(dx, dy);
-    const ax = Math.abs(dx);
-    const ay = Math.abs(dy);
-    if (current === 'left' || current === 'right') {
-      if (ay > ax * SWITCH_RATIO) return dy > 0 ? 'down' : 'up';
-      return dx > 0 ? 'right' : 'left';
-    }
-    if (ax > ay * SWITCH_RATIO) return dx > 0 ? 'right' : 'left';
-    return dy > 0 ? 'down' : 'up';
   }
 
   // ── Movement ──────────────────────────────────────────────────────────────
@@ -1241,6 +1226,7 @@ applyControlType();
     const wasRepeating = repeating;
     joyDir = dir;
     joystickStick.dataset.dir = dir;
+    drawKnob(dir);
     if (!inLobby) send({ type: 'input', action: 'move', dir });
     if (wasRepeating) {
       startRepeat();
@@ -1256,15 +1242,19 @@ applyControlType();
     stopTimers();
     joyDir = null;
     joystickStick.dataset.dir = '';
+    drawKnob(null);
   }
 
   // ── Rendering ─────────────────────────────────────────────────────────────
 
-  function drawKnob(dx, dy) {
-    const dist = Math.sqrt(dx * dx + dy * dy);
-    const s    = dist > KNOB_TRAVEL ? KNOB_TRAVEL / dist : 1; // pin near the ring edge
-    joystickKnob.style.setProperty('--kx', (dx * s).toFixed(1) + 'px');
-    joystickKnob.style.setProperty('--ky', (dy * s).toFixed(1) + 'px');
+  // Five states only: centred, or slotted into one of the four cardinals. The
+  // knob deliberately does not trail the thumb into a corner — it shows the
+  // direction being sent, not where the thumb happens to be.
+  function drawKnob(dir) {
+    const x = dir === 'left' ? -KNOB_OFFSET : dir === 'right' ? KNOB_OFFSET : 0;
+    const y = dir === 'up'   ? -KNOB_OFFSET : dir === 'down'  ? KNOB_OFFSET : 0;
+    joystickKnob.style.setProperty('--kx', x + 'px');
+    joystickKnob.style.setProperty('--ky', y + 'px');
   }
 
   function spawn(clientX, clientY) {
@@ -1276,7 +1266,7 @@ applyControlType();
     joystickStick.style.setProperty('--ox', (clientX - rect.left).toFixed(1) + 'px');
     joystickStick.style.setProperty('--oy', (clientY - rect.top).toFixed(1) + 'px');
     joystickStick.dataset.dir = '';
-    drawKnob(0, 0);
+    drawKnob(null);
     joystickRoot.classList.add('joy-live');
   }
 
@@ -1285,7 +1275,7 @@ applyControlType();
     joyDir    = null;
     pointerId = null;
     joystickStick.dataset.dir = '';
-    drawKnob(0, 0);
+    drawKnob(null);
     joystickRoot.classList.remove('joy-live');
   }
 
@@ -1294,13 +1284,12 @@ applyControlType();
   function processMove(clientX, clientY) {
     const dx = clientX - originX;
     const dy = clientY - originY;
-    drawKnob(dx, dy);
 
     if (dx * dx + dy * dy < DEAD_ZONE * DEAD_ZONE) {
       if (joyDir) release();
       return;
     }
-    const next = snapGuarded(dx, dy, joyDir);
+    const next = snap4(dx, dy);
     if (next !== joyDir) engage(next);
   }
 

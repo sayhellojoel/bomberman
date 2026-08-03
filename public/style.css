@@ -804,8 +804,8 @@ button:active { transform: scale(0.95); }
   border-color: rgba(255, 140, 90, 0.55);
 }
 
-/* Cardinal markers — the active one lights up so the snapped direction is
-   readable even when the knob sits off at an angle. */
+/* The four slots the knob can occupy. Visible while it sits elsewhere, so the
+   remaining directions read as available. */
 .joy-tick {
   position: absolute;
   width: 6px;
@@ -820,28 +820,23 @@ button:active { transform: scale(0.95); }
 .joy-tick[data-t="left"]  { top: 50%; left: 9px;     transform: translateY(-50%); }
 .joy-tick[data-t="right"] { top: 50%; right: 9px;    transform: translateY(-50%); }
 
-#joystick-stick[data-dir="up"]    .joy-tick[data-t="up"],
-#joystick-stick[data-dir="down"]  .joy-tick[data-t="down"],
-#joystick-stick[data-dir="left"]  .joy-tick[data-t="left"],
-#joystick-stick[data-dir="right"] .joy-tick[data-t="right"] {
-  background: #ff6b35;
-  box-shadow: 0 0 9px rgba(255, 107, 53, 0.95);
-}
-
-/* Knob — tracks the thumb 1:1 (no transform transition, so there's no lag),
-   clamped to the ring edge once the thumb pushes past it. */
+/* Knob — five positions only: centred, or slotted into one of the four
+   cardinals (never a corner, so it always matches the direction being sent).
+   The short transform transition is what makes it read as snapping between
+   slots rather than teleporting. Sized so it nests just inside the rim. */
 #joystick-knob {
   position: absolute;
-  left: -26px;
-  top: -26px;
-  width: 52px;
-  height: 52px;
+  left: -23px;
+  top: -23px;
+  width: 46px;
+  height: 46px;
   border-radius: 50%;
   background: rgba(200, 200, 210, 0.50);
   border: 2px solid rgba(255, 255, 255, 0.45);
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
   transform: translate(var(--kx, 0px), var(--ky, 0px));
-  transition: background 0.08s ease, border-color 0.08s ease, box-shadow 0.08s ease;
+  transition: transform 0.075s ease-out, background 0.08s ease,
+              border-color 0.08s ease, box-shadow 0.08s ease;
 }
 
 /* Engaged (outside the dead zone, a direction is being sent) */
