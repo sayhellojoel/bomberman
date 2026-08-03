@@ -703,69 +703,158 @@ button:active { transform: scale(0.95); }
 }
 
 /* =====================
-   VIRTUAL JOYSTICK & BOMB BUTTON
+   DYNAMIC VIRTUAL JOYSTICK & BOMB BUTTON
    ===================== */
 
 #joystick {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 100%;
-  height: 100%;
 }
 
-#joystick-base {
-  position: relative;
+/* In-flow placeholder. Its 140px box is what gives #game-ctrl-dpad its height
+   in portrait (the joystick itself is out of flow), so the canvas keeps the
+   same size it had with the old fixed control. Fades out while in use. */
+#joystick-hint {
   width: 140px;
   height: 140px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.06);
-  border: 2px solid rgba(255, 255, 255, 0.18);
   flex-shrink: 0;
-  touch-action: none;
+  border-radius: 50%;
+  border: 2px dashed rgba(255, 255, 255, 0.10);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.20);
+  font-size: 0.66rem;
+  line-height: 1.45;
+  text-align: center;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  transition: opacity 0.18s ease;
+  pointer-events: none;
 }
 
-/* Inner zone boundary ring — visual guide only */
+#joystick-hint::before {
+  content: '';
+  width: 12px;
+  height: 12px;
+  margin-bottom: 9px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.16);
+}
+
+#joystick.joy-live #joystick-hint { opacity: 0; }
+
+/* Transparent capture layer covering the left of the play area. Deliberately
+   wider than the control panel so a thumb landing slightly onto the board still
+   grabs the joystick. Sits below the interactive chrome (bomb btn z-index 6,
+   chat z-index 10) so those keep winning their own taps. Geometry is set per
+   orientation in the mobile media queries below. */
+#joystick-zone {
+  position: fixed;
+  left: 0;
+  bottom: 0;
+  width: 64vw;
+  height: min(268px, 46vh);
+  z-index: 5;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* The joystick itself — positioned at the touch origin by --ox/--oy. */
+#joystick-stick {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  transform: translate(var(--ox, 0px), var(--oy, 0px));
+  opacity: 0;
+  transition: opacity 0.13s ease;
+  pointer-events: none;
+}
+
+#joystick.joy-live #joystick-stick { opacity: 1; }
+
+/* Visual reference only — not a boundary. Movement continues past it. */
 #joystick-ring {
   position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 72px;
-  height: 72px;
+  left: -58px;
+  top: -58px;
+  width: 116px;
+  height: 116px;
   border-radius: 50%;
-  border: 1px dashed rgba(255, 255, 255, 0.18);
-  transform: translate(-50%, -50%);
-  pointer-events: none;
+  border: 2px solid rgba(255, 255, 255, 0.30);
+  background: radial-gradient(circle,
+    rgba(255, 255, 255, 0.10) 0%,
+    rgba(255, 255, 255, 0.05) 62%,
+    rgba(255, 255, 255, 0.00) 100%);
+  box-shadow: 0 2px 16px rgba(0, 0, 0, 0.35);
+  transform: scale(0.86);
+  transition: transform 0.14s cubic-bezier(0.2, 0.9, 0.3, 1.25),
+              border-color 0.08s ease;
 }
 
-/* Knob — moves to show current direction + zone */
+#joystick.joy-live #joystick-ring { transform: scale(1); }
+
+/* Engaged — the rim warms up so it's obvious a direction is being sent even
+   when the knob is sitting over the lit cardinal marker. */
+#joystick-stick:not([data-dir=""]) #joystick-ring {
+  border-color: rgba(255, 140, 90, 0.55);
+}
+
+/* Cardinal markers — the active one lights up so the snapped direction is
+   readable even when the knob sits off at an angle. */
+.joy-tick {
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.26);
+  transition: background 0.08s ease, box-shadow 0.08s ease;
+}
+
+.joy-tick[data-t="up"]    { left: 50%; top: 9px;     transform: translateX(-50%); }
+.joy-tick[data-t="down"]  { left: 50%; bottom: 9px;  transform: translateX(-50%); }
+.joy-tick[data-t="left"]  { top: 50%; left: 9px;     transform: translateY(-50%); }
+.joy-tick[data-t="right"] { top: 50%; right: 9px;    transform: translateY(-50%); }
+
+#joystick-stick[data-dir="up"]    .joy-tick[data-t="up"],
+#joystick-stick[data-dir="down"]  .joy-tick[data-t="down"],
+#joystick-stick[data-dir="left"]  .joy-tick[data-t="left"],
+#joystick-stick[data-dir="right"] .joy-tick[data-t="right"] {
+  background: #ff6b35;
+  box-shadow: 0 0 9px rgba(255, 107, 53, 0.95);
+}
+
+/* Knob — tracks the thumb 1:1 (no transform transition, so there's no lag),
+   clamped to the ring edge once the thumb pushes past it. */
 #joystick-knob {
   position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 44px;
-  height: 44px;
+  left: -26px;
+  top: -26px;
+  width: 52px;
+  height: 52px;
   border-radius: 50%;
-  background: rgba(180, 180, 180, 0.55);
-  border: 2px solid rgba(255, 255, 255, 0.35);
-  transform: translate(calc(-50% + var(--jx, 0px)), calc(-50% + var(--jy, 0px)));
-  transition: transform 0.07s ease-out, background 0.07s ease-out, box-shadow 0.07s ease-out;
-  pointer-events: none;
+  background: rgba(200, 200, 210, 0.50);
+  border: 2px solid rgba(255, 255, 255, 0.45);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
+  transform: translate(var(--kx, 0px), var(--ky, 0px));
+  transition: background 0.08s ease, border-color 0.08s ease, box-shadow 0.08s ease;
 }
 
-#joystick-base[data-zone="inner"] #joystick-knob {
-  background: rgba(255, 107, 53, 0.75);
-  border-color: #ff6b35;
-  box-shadow: 0 0 10px rgba(255, 107, 53, 0.5);
-}
-
-#joystick-base[data-zone="outer"] #joystick-knob {
-  background: rgba(255, 60, 60, 0.85);
-  border-color: #ff3333;
-  box-shadow: 0 0 14px rgba(255, 50, 50, 0.6);
+/* Engaged (outside the dead zone, a direction is being sent) */
+#joystick-stick:not([data-dir=""]) #joystick-knob {
+  background: rgba(255, 107, 53, 0.80);
+  border-color: #ff8c5a;
+  box-shadow: 0 0 16px rgba(255, 107, 53, 0.55), 0 2px 10px rgba(0, 0, 0, 0.4);
 }
 
 #bombBtn {
+  /* Above the joystick capture layer so bomb taps are never swallowed */
+  position: relative;
+  z-index: 6;
   width: 90px;
   height: 90px;
   border-radius: 50%;
@@ -1010,15 +1099,21 @@ button:active { transform: scale(0.95); }
     padding-top: 44px;
   }
 
-  /* Slightly smaller joystick to fit the column */
-  #joystick-base {
-    width: 120px;
-    height: 120px;
+  /* Joystick zone: the control column (164px) plus a slice of the board, from
+     just under the header down to the bottom edge. */
+  #joystick-zone {
+    left: 0;
+    top: 44px;
+    bottom: 0;
+    width: min(232px, 42vw);
+    height: auto;
   }
 
-  #joystick-ring {
-    width: 60px;
-    height: 60px;
+  /* Smaller hint to fit the narrower column */
+  #joystick-hint {
+    width: 120px;
+    height: 120px;
+    font-size: 0.6rem;
   }
 
   #bombBtn {

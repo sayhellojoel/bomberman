@@ -1151,190 +1151,218 @@ for (const btn of document.querySelectorAll('.ctl-btn')) {
 }
 applyControlType();
 
-// Virtual joystick (mobile)
+// --- Dynamic virtual joystick (mobile) ---
+//
+// The joystick has no home position. Whichever point inside #joystick-zone the
+// thumb first lands on becomes neutral; the ring + knob are drawn there and
+// removed on lift, so the next touch builds a fresh joystick somewhere else.
+//
+// The ring is decoration, not a boundary — pushing past it just keeps moving.
+// Direction is whichever quadrant the thumb sits in relative to neutral, and it
+// can be changed mid-gesture without lifting. The one guard is SWITCH_RATIO:
+// because it compares the two axes as a *ratio*, the sideways distance needed
+// to flip axis grows with how far the thumb is pushed. Near neutral a small
+// slide switches direction; pushed hard up, you have to drift back toward the
+// centre first. That's the forgiving-dead-zone feel without a hard boundary.
 (function () {
   // ── Tuning constants ─────────────────────────────────────────────────────
-  const DEAD_ZONE        = 10;   // px from touch origin — no movement
-  const INNER_MAX        = 32;   // px — inner zone upper boundary (single step)
-  const OUTER_DELAY      = 150;  // ms before continuous movement begins in outer zone
-  const MOVE_REPEAT      = 150;  // ms between repeated moves while in outer zone
-  const KNOB_INNER       = 24;   // px knob offset in inner zone (visual feedback)
-  const KNOB_OUTER       = 50;   // px knob offset in outer zone (visual feedback)
-  // Hysteresis: tan(57°) ≈ 1.54 — perpendicular component must exceed this ratio
-  // relative to the dominant component to switch axis (~12° guard past the 45° boundary).
-  const HYSTERESIS_RATIO = 1.54;
+  const DEAD_ZONE    = 20;   // px around neutral — no movement, direction released
+  const KNOB_TRAVEL  = 46;   // px — how far the knob slides before it pins (visual only)
+  const REPEAT_DELAY = 150;  // ms a direction must be held before it auto-repeats
+  const REPEAT_MS    = 150;  // ms between auto-repeats
+  // tan(54.5°) ≈ 1.4 — the new axis must beat the current one by this much to win,
+  // i.e. a ~9° guard band either side of the 45° quadrant boundary. Enough to stop
+  // the direction flickering when the thumb sits on a diagonal, small enough that
+  // a normal thumb arc into the next quadrant still switches without effort.
+  const SWITCH_RATIO = 1.4;
 
-  const joystickKnob = document.getElementById('joystick-knob');
-  const joystickBase = document.getElementById('joystick-base');
+  const joystickRoot  = document.getElementById('joystick');
+  const joystickZone  = document.getElementById('joystick-zone');
+  const joystickStick = document.getElementById('joystick-stick');
+  const joystickKnob  = document.getElementById('joystick-knob');
+  if (!joystickRoot || !joystickZone || !joystickStick || !joystickKnob) return;
 
   // ── State ─────────────────────────────────────────────────────────────────
-  let touchActive      = false;
-  let originX          = 0;
-  let originY          = 0;
-  let joyZone          = 'dead'; // 'dead' | 'inner' | 'outer'
-  let joyDir           = null;   // 'up' | 'down' | 'left' | 'right' | null
-  let innerStepFired   = false;
-  let outerDelayTimer  = null;
-  let outerRepeatTimer = null;
+  let pointerId   = null;  // touch identifier (or 'mouse') owning the joystick
+  let originX     = 0;     // neutral position, viewport coords
+  let originY     = 0;
+  let joyDir      = null;  // 'up' | 'down' | 'left' | 'right' | null
+  let repeating   = false; // true once auto-repeat has taken over
+  let delayTimer  = null;
+  let repeatTimer = null;
 
-  // ── Helpers ───────────────────────────────────────────────────────────────
+  // ── Direction snapping ────────────────────────────────────────────────────
 
-  // Snap analog displacement to the nearest cardinal direction (no hysteresis).
   function snap4(dx, dy) {
     return Math.abs(dx) >= Math.abs(dy)
       ? (dx > 0 ? 'right' : 'left')
       : (dy > 0 ? 'down'  : 'up');
   }
 
-  // Snap with hysteresis: given a current direction, only switch axis when the
-  // perpendicular component clearly dominates by HYSTERESIS_RATIO. This prevents
-  // flickering when the thumb sits near a 45-degree boundary.
-  function snap4Hysteresis(dx, dy, current) {
+  // Same as snap4, but the perpendicular axis has to clearly win before we
+  // switch off the direction already being held.
+  function snapGuarded(dx, dy, current) {
     if (!current) return snap4(dx, dy);
     const ax = Math.abs(dx);
     const ay = Math.abs(dy);
     if (current === 'left' || current === 'right') {
-      if (ay > ax * HYSTERESIS_RATIO) return dy > 0 ? 'down' : 'up';
+      if (ay > ax * SWITCH_RATIO) return dy > 0 ? 'down' : 'up';
       return dx > 0 ? 'right' : 'left';
+    }
+    if (ax > ay * SWITCH_RATIO) return dx > 0 ? 'right' : 'left';
+    return dy > 0 ? 'down' : 'up';
+  }
+
+  // ── Movement ──────────────────────────────────────────────────────────────
+
+  function stopTimers() {
+    clearTimeout(delayTimer);
+    clearInterval(repeatTimer);
+    delayTimer  = null;
+    repeatTimer = null;
+    repeating   = false;
+  }
+
+  // Reads joyDir at each tick, so a direction change mid-interval is picked up
+  // without having to rebuild the timer.
+  function startRepeat() {
+    clearInterval(repeatTimer);
+    repeating = true;
+    repeatTimer = setInterval(() => {
+      if (joyDir && !inLobby) send({ type: 'input', action: 'move', dir: joyDir });
+    }, REPEAT_MS);
+  }
+
+  // Take a direction: one step now, then auto-repeat. The REPEAT_DELAY guard
+  // only applies to a fresh engagement (so a quick flick is a single tile step);
+  // once already repeating, a direction change re-phases the timer instead of
+  // re-arming the delay, so sliding between quadrants doesn't stutter.
+  function engage(dir) {
+    const wasRepeating = repeating;
+    joyDir = dir;
+    joystickStick.dataset.dir = dir;
+    if (!inLobby) send({ type: 'input', action: 'move', dir });
+    if (wasRepeating) {
+      startRepeat();
     } else {
-      if (ax > ay * HYSTERESIS_RATIO) return dx > 0 ? 'right' : 'left';
-      return dy > 0 ? 'down' : 'up';
+      clearTimeout(delayTimer);
+      delayTimer = setTimeout(startRepeat, REPEAT_DELAY);
     }
   }
 
-  function clearOuterTimers() {
-    clearTimeout(outerDelayTimer);
-    clearInterval(outerRepeatTimer);
-    outerDelayTimer  = null;
-    outerRepeatTimer = null;
+  // Thumb came back inside the dead zone: stop moving, but keep the joystick on
+  // screen so it can be pushed straight back out in any direction.
+  function release() {
+    stopTimers();
+    joyDir = null;
+    joystickStick.dataset.dir = '';
   }
 
-  // Begin repeating moves at MOVE_REPEAT interval (called after OUTER_DELAY).
-  // Reads joyDir at each tick so mid-interval direction changes are always sent
-  // in the current direction rather than the direction at timer creation time.
-  function startContinuous() {
-    clearInterval(outerRepeatTimer);
-    outerRepeatTimer = setInterval(() => {
-      if (joyZone === 'outer' && joyDir) {
-        send({ type: 'input', action: 'move', dir: joyDir });
-      }
-    }, MOVE_REPEAT);
+  // ── Rendering ─────────────────────────────────────────────────────────────
+
+  function drawKnob(dx, dy) {
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    const s    = dist > KNOB_TRAVEL ? KNOB_TRAVEL / dist : 1; // pin near the ring edge
+    joystickKnob.style.setProperty('--kx', (dx * s).toFixed(1) + 'px');
+    joystickKnob.style.setProperty('--ky', (dy * s).toFixed(1) + 'px');
   }
 
-  // Move knob visually and update data attributes for CSS zone colouring.
-  function updateKnob(dir, zone) {
-    if (!joystickKnob || !joystickBase) return;
-    let x = 0;
-    let y = 0;
-    const off = zone === 'inner' ? KNOB_INNER : zone === 'outer' ? KNOB_OUTER : 0;
-    if      (dir === 'up')    y = -off;
-    else if (dir === 'down')  y =  off;
-    else if (dir === 'left')  x = -off;
-    else if (dir === 'right') x =  off;
-    joystickKnob.style.setProperty('--jx', x + 'px');
-    joystickKnob.style.setProperty('--jy', y + 'px');
-    joystickBase.dataset.zone = zone;
-    joystickBase.dataset.dir  = dir || '';
+  function spawn(clientX, clientY) {
+    // #joystick-zone is the containing block for the stick, so place the stick
+    // relative to it. Measured per gesture — the zone moves on rotate/resize.
+    const rect = joystickZone.getBoundingClientRect();
+    originX = clientX;
+    originY = clientY;
+    joystickStick.style.setProperty('--ox', (clientX - rect.left).toFixed(1) + 'px');
+    joystickStick.style.setProperty('--oy', (clientY - rect.top).toFixed(1) + 'px');
+    joystickStick.dataset.dir = '';
+    drawKnob(0, 0);
+    joystickRoot.classList.add('joy-live');
   }
 
-  // Reset everything to neutral.
-  function resetJoystick() {
-    clearOuterTimers();
-    joyZone        = 'dead';
-    joyDir         = null;
-    innerStepFired = false;
-    updateKnob(null, 'dead');
+  function despawn() {
+    stopTimers();
+    joyDir    = null;
+    pointerId = null;
+    joystickStick.dataset.dir = '';
+    drawKnob(0, 0);
+    joystickRoot.classList.remove('joy-live');
   }
 
   // ── Core input processing ─────────────────────────────────────────────────
-  function processTouch(clientX, clientY) {
-    const dx   = clientX - originX;
-    const dy   = clientY - originY;
-    const dist = Math.sqrt(dx * dx + dy * dy);
 
-    // Dead zone — finger drift shouldn't trigger movement.
-    if (dist < DEAD_ZONE) {
-      if (joyZone !== 'dead') resetJoystick();
+  function processMove(clientX, clientY) {
+    const dx = clientX - originX;
+    const dy = clientY - originY;
+    drawKnob(dx, dy);
+
+    if (dx * dx + dy * dy < DEAD_ZONE * DEAD_ZONE) {
+      if (joyDir) release();
       return;
     }
-
-    // Snap to one of 4 cardinal directions, with hysteresis to prevent flicker.
-    const newDir     = snap4Hysteresis(dx, dy, joyDir);
-    const dirChanged = (newDir !== joyDir);
-
-    if (dirChanged) {
-      // Direction changed: cancel running timers but keep the zone so that
-      // outer-zone movement restarts in the new direction immediately rather
-      // than requiring the thumb to return to neutral first.
-      clearOuterTimers();
-      innerStepFired = false;
-      joyDir = newDir;
-    }
-
-    if (dist < INNER_MAX) {
-      // ── Inner zone: fire exactly one step per direction engagement ────────
-      if (joyZone === 'outer') clearOuterTimers();
-      joyZone = 'inner';
-      if (!innerStepFired) {
-        send({ type: 'input', action: 'move', dir: joyDir });
-        innerStepFired = true;
-      }
-      updateKnob(joyDir, 'inner');
-    } else {
-      // ── Outer zone: continuous movement after OUTER_DELAY ─────────────────
-      //
-      // Trigger on first entry into outer zone, OR on any direction change
-      // while already in outer zone — both cases need a fresh step + delay
-      // so the new direction starts cleanly without returning to neutral.
-      if (joyZone !== 'outer' || dirChanged) {
-        joyZone = 'outer';
-        // Fire one immediate step for the new direction (unless inner zone
-        // already fired it — handles fingers that skip straight past inner).
-        if (!innerStepFired) {
-          send({ type: 'input', action: 'move', dir: joyDir });
-          innerStepFired = true;
-        }
-        // Guard delay before continuous movement begins.
-        outerDelayTimer = setTimeout(startContinuous, OUTER_DELAY);
-      }
-      updateKnob(joyDir, 'outer');
-    }
+    const next = snapGuarded(dx, dy, joyDir);
+    if (next !== joyDir) engage(next);
   }
 
-  // ── Touch event handlers ──────────────────────────────────────────────────
+  // ── Touch handlers ────────────────────────────────────────────────────────
+  //
+  // Only touchstart has to land inside the zone: once a touch is captured, the
+  // browser keeps delivering its move/end events here even when the thumb
+  // wanders onto the board or off the edge of the screen.
 
-  // Each new touch sets its own origin — "floating neutral" behaviour.
-  function onTouchStart(e) {
-    if (inLobby) return;
-    if (controlType !== 'joystick') return; // D-Pad is active — stay out of its way.
-    e.preventDefault();
+  function ownTouch(list) {
+    for (const t of list) if (t.identifier === pointerId) return t;
+    return null;
+  }
+
+  joystickZone.addEventListener('touchstart', (e) => {
+    if (inLobby || controlType !== 'joystick') return;
+    if (pointerId !== null) return; // one joystick at a time — ignore extra fingers
     const t = e.changedTouches[0];
-    touchActive = true;
-    originX = t.clientX;
-    originY = t.clientY;
-    resetJoystick();
-  }
-
-  function onTouchMove(e) {
-    if (!touchActive || inLobby) return;
-    if (controlType !== 'joystick') return;
-    e.preventDefault();
-    const t = e.touches[0];
     if (!t) return;
-    processTouch(t.clientX, t.clientY);
-  }
-
-  function onTouchEnd(e) {
-    if (!touchActive) return;
     e.preventDefault();
-    touchActive = false;
-    resetJoystick();
-  }
+    pointerId = t.identifier;
+    spawn(t.clientX, t.clientY);
+  }, { passive: false });
 
-  ctrlDpad.addEventListener('touchstart',  onTouchStart, { passive: false });
-  ctrlDpad.addEventListener('touchmove',   onTouchMove,  { passive: false });
-  ctrlDpad.addEventListener('touchend',    onTouchEnd,   { passive: false });
-  ctrlDpad.addEventListener('touchcancel', onTouchEnd,   { passive: false });
+  joystickZone.addEventListener('touchmove', (e) => {
+    if (pointerId === null) return;
+    const t = ownTouch(e.changedTouches);
+    if (!t) return;
+    e.preventDefault();
+    processMove(t.clientX, t.clientY);
+  }, { passive: false });
+
+  const onTouchEnd = (e) => {
+    if (pointerId === null) return;
+    if (!ownTouch(e.changedTouches)) return;
+    e.preventDefault();
+    despawn();
+  };
+
+  joystickZone.addEventListener('touchend',    onTouchEnd, { passive: false });
+  joystickZone.addEventListener('touchcancel', onTouchEnd, { passive: false });
+
+  // ── Mouse fallback (desktop testing in a narrow/portrait window) ──────────
+  joystickZone.addEventListener('mousedown', (e) => {
+    if (inLobby || controlType !== 'joystick') return;
+    if (pointerId !== null) return;
+    e.preventDefault();
+    pointerId = 'mouse';
+    spawn(e.clientX, e.clientY);
+  });
+
+  window.addEventListener('mousemove', (e) => {
+    if (pointerId !== 'mouse') return;
+    processMove(e.clientX, e.clientY);
+  });
+
+  window.addEventListener('mouseup', () => {
+    if (pointerId === 'mouse') despawn();
+  });
+
+  // Hard-stop any in-flight movement when the player returns to the lobby.
+  window.addEventListener('bomberman:returnToLobby', despawn);
 }());
 
 // --- D-Pad input (alternate mobile control, selected from the lobby) ---

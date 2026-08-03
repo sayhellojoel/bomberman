@@ -62,10 +62,23 @@
     <!-- Left panel: movement controls. One of { joystick, dpad } is visible at a
          time, controlled by the Lobby → Controls setting (mobile only). -->
     <div id="game-ctrl-dpad">
+      <!-- Dynamic joystick: no fixed home. #joystick-zone is a transparent
+           capture layer over the left of the play area; the ring + knob are
+           spawned at wherever the thumb lands and removed when it lifts.
+           #joystick-hint is the only in-flow part — it reserves the panel's
+           footprint so the canvas keeps its size, and hints at the control. -->
       <div id="joystick">
-        <div id="joystick-base" data-zone="dead" data-dir="">
-          <div id="joystick-ring"></div>
-          <div id="joystick-knob"></div>
+        <div id="joystick-hint" aria-hidden="true">touch &amp; drag<br>to move</div>
+        <div id="joystick-zone">
+          <div id="joystick-stick" data-dir="">
+            <div id="joystick-ring">
+              <i class="joy-tick" data-t="up"></i>
+              <i class="joy-tick" data-t="down"></i>
+              <i class="joy-tick" data-t="left"></i>
+              <i class="joy-tick" data-t="right"></i>
+            </div>
+            <div id="joystick-knob"></div>
+          </div>
         </div>
       </div>
       <div id="dpad" style="display:none;">
